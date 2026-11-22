@@ -1,49 +1,149 @@
-"""Train the dummy GPT (one Linear layer) with AdamW and MSE loss."""
+"""Train the Step 2 model (token + positional embeddings) with AdamW and cross-entropy.
+
+Each sentence is turned into next-word questions:
+    tokens : the  cat  eats  fish  .  <eos> <pad> <pad>      (padded to CONTEXT_LEN)
+    input  : the  cat  eats  fish  .  <eos> <pad>            tokens[:-1]
+    target : cat  eats fish  .   <eos> <pad> <pad>           tokens[1:]
+Positions whose target is <pad> are ignored by the loss.
+"""
+
+import math
+import random
+import time
+from collections import Counter, defaultdict
 
 import torch
 import torch.nn as nn
 
-from model import GPT
+from model import GPT, count_parameters
 from tokenizer import Tokenizer
 
-EPOCHS = 500
-LR = 0.05
-WEIGHT_DECAY = 0.0  # AdamW's default 0.01 would pull w, b slightly toward 0
-LOG_EVERY = 25
+CORPUS_PATH = "data/corpus.txt"
+MODEL_PATH = "model.pt"
+
+D_MODEL = 64
+CONTEXT_LEN = 8
+EPOCHS = 100
+BATCH_SIZE = 64
+LR = 3e-3
+WEIGHT_DECAY = 0.0
+VAL_FRACTION = 0.1
+LOG_EVERY = 10
+SEED = 42
 
 
-def main():
-    torch.manual_seed(0)
-    tokenizer = Tokenizer()
+def load_data(tokenizer: Tokenizer):
+    """Return (X_train, Y_train, X_val, Y_val), each of shape (N, CONTEXT_LEN - 1)."""
+    sentences = open(CORPUS_PATH).read().splitlines()
+    random.Random(SEED).shuffle(sentences)
 
-    # Training pairs: current word -> next word
-    pairs = [("He", "boy"), ("She", "girl")]
-    x = torch.tensor([[tokenizer.encode(a)[0]] for a, _ in pairs], dtype=torch.float32)
-    y = torch.tensor([[tokenizer.encode(b)[0]] for _, b in pairs], dtype=torch.float32)
+    rows = []
+    for s in sentences:
+        ids = tokenizer.encode(s, add_eos=True)
+        assert len(ids) <= CONTEXT_LEN, f"Too long for context_len: {s!r}"
+        rows.append(ids + [tokenizer.pad_id] * (CONTEXT_LEN - len(ids)))
+    data = torch.tensor(rows)  # (N, CONTEXT_LEN)
 
-    model = GPT()
-    loss_fn = nn.MSELoss()
+    X, Y = data[:, :-1], data[:, 1:]  # input / target, shifted by one
+    n_val = int(len(data) * VAL_FRACTION)
+    return X[n_val:], Y[n_val:], X[:n_val], Y[:n_val]
+
+
+def best_possible_loss(X: torch.Tensor, Y: torch.Tensor, pad_id: int, use_pos: bool = True) -> float:
+    """Lowest loss ANY model can reach if it only sees (current token, position).
+
+    This is the uncertainty left in the data: e.g. after "the" at position 0 there
+    are many valid subjects, so even a perfect model can't get the loss to 0.
+    """
+    counts = defaultdict(Counter)
+    for x_row, y_row in zip(X.tolist(), Y.tolist()):
+        for pos, (x, y) in enumerate(zip(x_row, y_row)):
+            if y != pad_id:
+                counts[(x, pos) if use_pos else x][y] += 1
+    total = sum(sum(c.values()) for c in counts.values())
+    loss = 0.0
+    for c in counts.values():
+        n = sum(c.values())
+        loss -= sum(k * math.log(k / n) for k in c.values())
+    return loss / total
+
+
+@torch.no_grad()
+def evaluate(model: GPT, X: torch.Tensor, Y: torch.Tensor, loss_fn) -> float:
+    model.eval()
+    logits = model(X)
+    loss = loss_fn(logits.reshape(-1, logits.shape[-1]), Y.reshape(-1))
+    model.train()
+    return loss.item()
+
+
+def train(use_pos: bool = True, epochs: int = EPOCHS, verbose: bool = True, save_path: str | None = MODEL_PATH):
+    """Train a model and return (model, tokenizer, info)."""
+    torch.manual_seed(SEED)
+    tokenizer = Tokenizer.from_corpus(CORPUS_PATH)
+    X_train, Y_train, X_val, Y_val = load_data(tokenizer)
+    V = tokenizer.vocab_size
+
+    model = GPT(V, d_model=D_MODEL, context_len=CONTEXT_LEN, use_pos=use_pos)
+    # Takes RAW logits: it applies log-softmax internally. Don't softmax before it.
+    loss_fn = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_id)
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
 
-    print(f"start          | w {model.w():.4f} | b {model.b():.4f}")
-    for epoch in range(1, EPOCHS + 1):
-        pred = model(x)
-        loss = loss_fn(pred, y)
+    best = best_possible_loss(X_train, Y_train, tokenizer.pad_id, use_pos)
+    if verbose:
+        print(f"Data      : {len(X_train):,} train / {len(X_val):,} val sentences, vocab {V}")
+        print("Parameters: " + ", ".join(f"{k} {v:,}" for k, v in count_parameters(model).items()))
+        print(f"Steps     : {math.ceil(len(X_train) / BATCH_SIZE)} per epoch x {epochs} epochs")
+        print(f"Uniform-guess loss ln({V}) = {math.log(V):.3f} | best possible loss = {best:.3f}\n")
+        print(f"start        | val loss {evaluate(model, X_val, Y_val, loss_fn):.4f}")
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+    start = time.time()
+    for epoch in range(1, epochs + 1):
+        perm = torch.randperm(len(X_train))  # new batch order every epoch
+        total, n_batches = 0.0, 0
+        for i in range(0, len(X_train), BATCH_SIZE):
+            idx = perm[i : i + BATCH_SIZE]
+            xb, yb = X_train[idx], Y_train[idx]  # (B, 7), (B, 7)
 
-        if epoch == 1 or epoch % LOG_EVERY == 0 or epoch == EPOCHS:
-            print(
-                f"epoch {epoch:4d}/{EPOCHS} | loss {loss.item():.6f} "
-                f"| w {model.w():.4f} | b {model.b():.4f}"
-            )
+            logits = model(xb)  # 1. forward      (B, 7, V)
+            loss = loss_fn(logits.reshape(-1, V), yb.reshape(-1))  # 2. loss
+            optimizer.zero_grad()
+            loss.backward()  # 3. backward
+            optimizer.step()  # 4. update
 
-    print(f"\nFinal: w = {model.w():.4f}, b = {model.b():.4f}")
-    torch.save(model.state_dict(), "model.pt")
-    print("Saved weights to model.pt")
+            total += loss.item()
+            n_batches += 1
+
+        if verbose and (epoch == 1 or epoch % LOG_EVERY == 0 or epoch == epochs):
+            val = evaluate(model, X_val, Y_val, loss_fn)
+            print(f"epoch {epoch:3d}/{epochs} | train loss {total / n_batches:.4f} | val loss {val:.4f}")
+
+    info = {"val_loss": evaluate(model, X_val, Y_val, loss_fn), "best_possible": best}
+    if verbose:
+        print(f"\nDone in {time.time() - start:.0f}s. Final val loss {info['val_loss']:.4f} "
+              f"(best possible {best:.4f})")
+
+    if save_path:
+        torch.save(
+            {
+                "state_dict": model.state_dict(),
+                "config": {"vocab_size": V, "d_model": D_MODEL, "context_len": CONTEXT_LEN, "use_pos": use_pos},
+                "vocab": tokenizer.itos,
+            },
+            save_path,
+        )
+        if verbose:
+            print(f"Saved model to {save_path}")
+    return model, tokenizer, info
+
+
+def load_model(path: str = MODEL_PATH) -> tuple[GPT, Tokenizer]:
+    checkpoint = torch.load(path)
+    model = GPT(**checkpoint["config"])
+    model.load_state_dict(checkpoint["state_dict"])
+    model.eval()
+    return model, Tokenizer(checkpoint["vocab"])
 
 
 if __name__ == "__main__":
-    main()
+    train()
