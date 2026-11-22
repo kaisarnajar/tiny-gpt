@@ -24,18 +24,18 @@ Next steps: embeddings, cross-entropy over the vocab, attention, feed-forward.
 
 ## Step 2 data: synthetic corpus
 
-`data.py` generates `data/corpus.txt`: 50,000 lowercase sentences from templates (fixed seed, reproducible).
+`data.py` generates `data/corpus.txt`: 50,000 natural-sounding lowercase sentences (fixed seed, reproducible).
+Each sentence is built from facts that are true for its subject, not random slot-filling:
 
 ```
-the {animal} {eats|likes|wants} the {food} .      the cat eats the fish .
-the {animal} {chases|finds|sees} the {object} .   the dog chases the ball .
-the {animal} is {adjective} .                     the lion is happy .
-he is a {boy|man|king|prince} .                   she is a {girl|woman|queen|princess} .
+the cow eats grass .            the owl hoots at night .
+the dog chases the ball .       the mouse hides from the cat .
+the cat sleeps on the sofa .    my father walks the dog .
+the lion is very strong .       she is a doctor .
 ```
 
-- Same-category words share contexts, so their embeddings should cluster.
-- "the" at position 0 is followed by an animal; at position 3 by a food/object, so position matters.
-- 50 words, max 6 words per sentence (7 tokens with `<eos>`), fits `context_len = 8`.
+- 16 animals (sound, food, what they chase, adjectives, home, where they sleep, actions), people and their activities, and "he/she is ..." sentences.
+- 223 words, at most 7 words per sentence (8 tokens with `<eos>`), fits `context_len = 8`.
 
 ```bash
 python data.py           # 50,000 sentences
