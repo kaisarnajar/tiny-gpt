@@ -38,6 +38,34 @@ def error(message: str) -> JSONResponse:
     return JSONResponse(status_code=400, content={"error": message})
 
 
+@app.get("/api/info")
+def info():
+    """Model size, with the calculation for every layer (read from the real weights)."""
+    V, d = model.token_emb.weight.shape  # vocab_size, d_model
+    T = model.pos_emb.weight.shape[0]  # context_len
+    layers = [
+        {"name": "Token embedding", "shape": f"{V} × {d}", "formula": "vocab_size × d_model",
+         "calculation": f"{V} × {d}", "params": V * d},
+    ]
+    if model.use_pos:
+        layers.append({"name": "Position embedding", "shape": f"{T} × {d}", "formula": "context_len × d_model",
+                       "calculation": f"{T} × {d}", "params": T * d})
+    layers += [
+        {"name": "Output layer weights", "shape": f"{d} × {V}", "formula": "d_model × vocab_size",
+         "calculation": f"{d} × {V}", "params": d * V},
+        {"name": "Output layer bias", "shape": f"{V}", "formula": "vocab_size",
+         "calculation": f"{V}", "params": V},
+    ]
+    total = sum(layer["params"] for layer in layers)
+    assert total == sum(p.numel() for p in model.parameters()), "breakdown doesn't match the model"
+    return {
+        "config": {"vocab_size": V, "d_model": d, "context_len": T},
+        "layers": layers,
+        "total": total,
+        "equation": " + ".join(layer["calculation"].replace(" × ", "·") for layer in layers) + f" = {total:,}",
+    }
+
+
 @app.post("/api/complete")
 def complete(req: CompleteRequest):
     # "The Dog." -> ["the", "dog", "."]  (lowercase, punctuation as its own word)

@@ -10,6 +10,53 @@ type Message = {
 
 type CompleteResponse = { sentence: string } | { error: string }
 
+type ModelInfo = {
+  config: { vocab_size: number; d_model: number; context_len: number }
+  layers: { name: string; shape: string; formula: string; calculation: string; params: number }[]
+  total: number
+  equation: string
+}
+
+const fmt = (n: number) => n.toLocaleString('en-US')
+
+function ParametersPanel({ info }: { info: ModelInfo }) {
+  const { vocab_size, d_model, context_len } = info.config
+  return (
+    <section className="params" aria-label="Parameter calculation">
+      <p className="params-config">
+        vocab_size = {vocab_size} · d_model = {d_model} · context_len = {context_len}
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Layer</th>
+            <th>Formula</th>
+            <th>Calculation</th>
+            <th className="num">Parameters</th>
+          </tr>
+        </thead>
+        <tbody>
+          {info.layers.map((l) => (
+            <tr key={l.name}>
+              <td>{l.name}</td>
+              <td className="muted">{l.formula}</td>
+              <td>{l.calculation}</td>
+              <td className="num">{fmt(l.params)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colSpan={3}>Total</td>
+            <td className="num">{fmt(info.total)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <p className="params-equation">{info.equation}</p>
+    </section>
+  )
+}
+
 // Only the latest message goes to the backend; the history stays in the browser.
 async function askModel(message: string): Promise<{ text: string; error?: boolean }> {
   try {
@@ -29,7 +76,17 @@ function App() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [info, setInfo] = useState<ModelInfo | null>(null)
+  const [showParams, setShowParams] = useState(true)
   const nextId = useRef(0)
+
+  // Model size + parameter calculation, fetched once when the page opens.
+  useEffect(() => {
+    fetch('/api/info')
+      .then((res) => res.json())
+      .then(setInfo)
+      .catch(() => setInfo(null))
+  }, [])
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -61,7 +118,19 @@ function App() {
       <header className="chat-header">
         <h1>tiny-gpt</h1>
         <span className="chat-header-note">Step 2 · embeddings</span>
+        {info && (
+          <button
+            type="button"
+            className="params-toggle"
+            onClick={() => setShowParams((s) => !s)}
+            aria-expanded={showParams}
+          >
+            {fmt(info.total)} parameters {showParams ? '▴' : '▾'}
+          </button>
+        )}
       </header>
+
+      {info && showParams && <ParametersPanel info={info} />}
 
       <main className="chat-messages" aria-live="polite">
         {messages.length === 0 && (
