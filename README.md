@@ -31,6 +31,21 @@ python explore.py
 No attention yet: each prediction sees only the current word and its position,
 so "he is a" and "she is a" get the same next-word probabilities.
 
+### Web UI
+
+Type the start of a sentence in the browser; the model completes it.
+
+```bash
+pip install -r requirements.txt
+cd frontend && npm install && npm run build && cd ..
+python server.py        # → http://localhost:8000
+```
+
+`The Dog` → `the dog barks loudly .`  ·  `the unicorn` → `Unknown word: "unicorn"`
+
+- `server.py`: FastAPI, `POST /api/complete {"prompt": "..."}` → `{"sentence": "..."}`, serves the built page
+- `frontend/`: Vite + React + TypeScript (`src/App.tsx`); `npm run dev` for live reload (proxies `/api` to port 8000)
+
 ## Step 1: the dummy model (commit 50c8ef1)
 
 ```
