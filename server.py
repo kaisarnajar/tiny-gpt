@@ -4,7 +4,7 @@
     python server.py            # -> http://localhost:8000
 
 API:
-    POST /api/complete  {"prompt": "The Dog"}
+    POST /api/complete  {"prompt": "The Dog", "temperature": 1.0, "top_k": 0, "top_p": 0.9}
       200 {"sentence": "the dog barks loudly ."}
       400 {"error": "Unknown word: \"unicorn\""}
 """
@@ -16,9 +16,9 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from generate import generate
+from generate import TEMPERATURE, TOP_K, TOP_P, generate
 from train import MODEL_PATH, load_model
 
 FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
@@ -32,6 +32,10 @@ app = FastAPI(title="tiny-gpt")
 
 class CompleteRequest(BaseModel):
     prompt: str
+    # Sampling settings (see generate.py). temperature 0 = greedy.
+    temperature: float = Field(TEMPERATURE, ge=0, le=5)
+    top_k: int = Field(TOP_K, ge=0)  # 0 = off
+    top_p: float = Field(TOP_P, gt=0, le=1)  # 1.0 = off
 
 
 def error(message: str) -> JSONResponse:
@@ -63,6 +67,7 @@ def info():
         "layers": layers,
         "total": total,
         "equation": " + ".join(layer["calculation"].replace(" × ", "·") for layer in layers) + f" = {total:,}",
+        "sampling": {"temperature": TEMPERATURE, "top_k": TOP_K, "top_p": TOP_P},  # defaults for the UI
     }
 
 
@@ -80,7 +85,8 @@ def complete(req: CompleteRequest):
     if len(words) >= model.context_len:
         return error(f"Prompt is too long: use at most {model.context_len - 1} words.")
 
-    return {"sentence": generate(model, tokenizer, " ".join(words), verbose=False)}
+    sentence = generate(model, tokenizer, " ".join(words), req.temperature, req.top_k, req.top_p, verbose=False)
+    return {"sentence": sentence}
 
 
 if FRONTEND_DIST.exists():

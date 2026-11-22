@@ -10,11 +10,16 @@ type Message = {
 
 type CompleteResponse = { sentence: string } | { error: string }
 
+type Sampling = { temperature: number; top_k: number; top_p: number }
+
+const DEFAULT_SAMPLING: Sampling = { temperature: 1.0, top_k: 0, top_p: 0.9 }
+
 type ModelInfo = {
   config: { vocab_size: number; d_model: number; context_len: number }
   layers: { name: string; shape: string; formula: string; calculation: string; params: number }[]
   total: number
   equation: string
+  sampling?: Sampling
 }
 
 const fmt = (n: number) => n.toLocaleString('en-US')
@@ -57,16 +62,55 @@ function ParametersPanel({ info }: { info: ModelInfo }) {
   )
 }
 
-// Only the latest message goes to the backend; the history stays in the browser.
-async function askModel(message: string): Promise<{ text: string; error?: boolean }> {
+function SamplingControls({ value, onChange }: { value: Sampling; onChange: (s: Sampling) => void }) {
+  const greedy = value.temperature === 0
+  return (
+    <section className="sampling" aria-label="Sampling settings">
+      <label title="Divides the scores before softmax. 0 = greedy (always the most likely word), below 1 = safer, above 1 = more random.">
+        <span>Temperature</span>
+        <input
+          type="range" min={0} max={2} step={0.1}
+          value={value.temperature}
+          onChange={(e) => onChange({ ...value, temperature: Number(e.target.value) })}
+        />
+        <output>{greedy ? '0 · greedy' : value.temperature.toFixed(1)}</output>
+      </label>
+      <label title="Keep only the k most likely words. 0 = off." className={greedy ? 'off' : ''}>
+        <span>Top-k</span>
+        <input
+          type="range" min={0} max={20} step={1}
+          value={value.top_k}
+          disabled={greedy}
+          onChange={(e) => onChange({ ...value, top_k: Number(e.target.value) })}
+        />
+        <output>{value.top_k === 0 ? 'off' : value.top_k}</output>
+      </label>
+      <label title="Keep the most likely words until their probabilities add up to p. 1.0 = off." className={greedy ? 'off' : ''}>
+        <span>Top-p</span>
+        <input
+          type="range" min={0.05} max={1} step={0.05}
+          value={value.top_p}
+          disabled={greedy}
+          onChange={(e) => onChange({ ...value, top_p: Number(e.target.value) })}
+        />
+        <output>{value.top_p >= 1 ? 'off' : value.top_p.toFixed(2)}</output>
+      </label>
+    </section>
+  )
+}
+
+// Only the latest message (plus the sampling settings) goes to the backend; the history stays in the browser.
+async function askModel(message: string, sampling: Sampling): Promise<{ text: string; error?: boolean }> {
   try {
     const res = await fetch('/api/complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: message }),
+      body: JSON.stringify({ prompt: message, ...sampling }),
     })
     const data: CompleteResponse = await res.json()
-    return 'error' in data ? { text: data.error, error: true } : { text: data.sentence }
+    if ('error' in data) return { text: data.error, error: true }
+    if (!res.ok) return { text: `Request failed (${res.status}).`, error: true }
+    return { text: data.sentence }
   } catch {
     return { text: 'Could not reach the server. Is `python server.py` running?', error: true }
   }
@@ -78,13 +122,17 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [info, setInfo] = useState<ModelInfo | null>(null)
   const [showParams, setShowParams] = useState(true)
+  const [sampling, setSampling] = useState<Sampling>(DEFAULT_SAMPLING)
   const nextId = useRef(0)
 
   // Model size + parameter calculation, fetched once when the page opens.
   useEffect(() => {
     fetch('/api/info')
       .then((res) => res.json())
-      .then(setInfo)
+      .then((data: ModelInfo) => {
+        setInfo(data)
+        if (data.sampling) setSampling(data.sampling) // server's defaults
+      })
       .catch(() => setInfo(null))
   }, [])
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -107,7 +155,7 @@ function App() {
     addMessage('user', text)
     setInput('')
     setLoading(true)
-    const reply = await askModel(text)
+    const reply = await askModel(text, sampling)
     addMessage('assistant', reply.text, reply.error)
     setLoading(false)
     inputRef.current?.focus()
@@ -117,7 +165,7 @@ function App() {
     <div className="chat">
       <header className="chat-header">
         <h1>tiny-gpt</h1>
-        <span className="chat-header-note">Step 2 · embeddings</span>
+        <span className="chat-header-note">Step 2 · embeddings + sampling</span>
         {info && (
           <button
             type="button"
@@ -149,6 +197,8 @@ function App() {
         {loading && <div className="message message-assistant message-typing">…</div>}
         <div ref={bottomRef} />
       </main>
+
+      <SamplingControls value={sampling} onChange={setSampling} />
 
       <form className="chat-composer" onSubmit={send}>
         <input
