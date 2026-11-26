@@ -2,7 +2,8 @@ __pycache__/
 *.pt
 .venv/
 .DS_Store
-embeddings.png
 .claude/
 attention.png
 docs/
+node_modules/
+dist/
