@@ -46,10 +46,6 @@
   overflow-x: auto;
 }
 
-.params-config {
-  margin: 0 0 8px;
-  color: var(--muted);
-}
 
 .params table {
   width: 100%;
@@ -79,16 +75,7 @@
   text-align: right;
 }
 
-.params .muted {
-  color: var(--muted);
-}
 
-.params-equation {
-  margin: 8px 0 0;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: 13px;
-  color: var(--muted);
-}
 
 .chat-messages {
   flex: 1;

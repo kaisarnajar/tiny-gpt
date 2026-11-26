@@ -1,45 +1,12 @@
-"""Generate a synthetic but natural-sounding training corpus for Step 2 (embeddings).
-
-Instead of mixing random words into slots (which gave odd sentences like
-"the lion is slow ."), every sentence is built from facts that are actually true
-for its subject:
-
-    the cow eats grass .            the owl hoots at night .
-    the dog chases the ball .       the mouse hides from the cat .
-    the cat sleeps on the sofa .    my father walks the dog .
-    the lion is very strong .       she is a doctor .
-
-What the model can learn from this:
-  * words with similar roles (animals, foods, places, ...) appear in similar
-    contexts, so their embeddings should end up close together;
-  * position matters: "the" at position 0 starts the subject (an animal or a
-    person), while a later "the" introduces an object or a place.
-
-All text is lowercase; "." is its own word. Every sentence has at most 7 words,
-so with <eos> it fits context_len = 8.
-
-Usage:
-    python data.py            # 50,000 sentences -> data/corpus.txt
-    python data.py 100000     # custom number of sentences
-"""
-
 import random
 import sys
-from collections import Counter
 from pathlib import Path
 
 SEED = 42
 NUM_SENTENCES = 50_000
-MAX_WORDS = 7  # + <eos> = 8 tokens = context_len
+MAX_WORDS = 7
 OUT_PATH = Path("data/corpus.txt")
 
-# ---------------------------------------------------------------------------
-# Facts about each animal. Every phrase is something that animal really does.
-#   sound : the noise it makes          eats  : what it eats
-#   chases: what it chases              is    : adjectives that fit it
-#   lives : where it lives              sleeps: where / when it sleeps
-#   does  : other typical actions
-# ---------------------------------------------------------------------------
 ANIMALS = {
     "cat": {
         "sound": "meows",
@@ -172,9 +139,6 @@ ANIMALS = {
 
 SOUND_EXTRAS = ["", "loudly", "at night", "all day"]
 
-# ---------------------------------------------------------------------------
-# People: who they are and what they do.
-# ---------------------------------------------------------------------------
 PEOPLE_ACTIVITIES = [
     "reads a book", "drinks water", "drinks tea", "eats an apple", "eats bread",
     "walks the dog", "feeds the cat", "rides a bike", "writes a letter",
@@ -205,10 +169,7 @@ JOBS = ["a doctor", "a teacher", "a farmer", "a student", "a singer"]
 PERSON_ADJECTIVES = ["kind", "tall", "happy", "tired", "hungry", "busy"]
 
 
-# ---------------------------------------------------------------------------
-# Sentence builders
-# ---------------------------------------------------------------------------
-def animal_sentence(rng: random.Random) -> str:
+def animal_sentence(rng):
     name = rng.choice(list(ANIMALS))
     facts = ANIMALS[name]
     relation = rng.choice(list(facts))
@@ -221,11 +182,10 @@ def animal_sentence(rng: random.Random) -> str:
         return f"the {name} is {very}{rng.choice(facts['is'])} ."
     if relation == "does":
         return f"the {name} {rng.choice(facts['does'])} ."
-    # eats / chases / lives / sleeps -> "the {name} {verb} {phrase} ."
     return f"the {name} {relation} {rng.choice(facts[relation])} ."
 
 
-def person_sentence(rng: random.Random) -> str:
+def person_sentence(rng):
     subject = rng.choice(list(PEOPLE))
     if subject in ("the farmer", "the teacher") or rng.random() < 0.5:
         activity = rng.choice(PEOPLE[subject])
@@ -234,7 +194,7 @@ def person_sentence(rng: random.Random) -> str:
     return f"{subject} {activity} ."
 
 
-def identity_sentence(rng: random.Random) -> str:
+def identity_sentence(rng):
     pronoun = rng.choice(list(IDENTITIES))
     r = rng.random()
     if r < 0.4:
@@ -244,11 +204,10 @@ def identity_sentence(rng: random.Random) -> str:
     return f"{pronoun} is {rng.choice(PERSON_ADJECTIVES)} ."
 
 
-# (builder, weight): how often each kind of sentence is used
 TEMPLATES = [(animal_sentence, 0.65), (person_sentence, 0.25), (identity_sentence, 0.10)]
 
 
-def generate(n: int, seed: int = SEED) -> list[str]:
+def generate(n, seed=SEED):
     rng = random.Random(seed)
     builders, weights = zip(*TEMPLATES)
     sentences = [rng.choices(builders, weights)[0](rng) for _ in range(n)]
@@ -257,27 +216,9 @@ def generate(n: int, seed: int = SEED) -> list[str]:
     return sentences
 
 
-def main():
+if __name__ == "__main__":
     n = int(sys.argv[1]) if len(sys.argv) > 1 else NUM_SENTENCES
     sentences = generate(n)
-
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text("\n".join(sentences) + "\n")
-
-    words = [w for s in sentences for w in s.split()]
-    counts = Counter(words)
-    lengths = Counter(len(s.split()) for s in sentences)
-
     print(f"Wrote {len(sentences):,} sentences to {OUT_PATH}")
-    print(f"Unique sentences : {len(set(sentences)):,}")
-    print(f"Total words      : {len(words):,}")
-    print(f"Vocabulary size  : {len(counts)} words (+ <pad>, <eos> added by the tokenizer)")
-    print(f"Sentence lengths : {dict(sorted(lengths.items()))}  (max + <eos> = {max(lengths) + 1} tokens)")
-    print(f"Most common      : {counts.most_common(8)}")
-    print("\nSamples:")
-    for s in sentences[:12]:
-        print("  " + s)
-
-
-if __name__ == "__main__":
-    main()
