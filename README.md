@@ -2,7 +2,36 @@
 
 Building a GPT step by step.
 
-## Step 2: token + positional embeddings (current)
+## Step 3: causal self-attention (current)
+
+```
+x      = token_emb + pos_emb              (B, T, 64)
+Q, K, V = x·W_q, x·W_k, x·W_v             (B, T, 64) each, W = 64 × 64
+scores = Q·Kᵀ / √64                       (B, T, T)  how well word i matches word j
+scores = -inf above the diagonal          causal mask: no looking at future words
+x      = softmax(scores) · V · W_o        (B, T, 64) each word mixes in earlier words
+logits = lm_head(x)                       (B, T, 225)
+```
+
+- `model.py`: `CausalSelfAttention` (one head, written out by hand); `GPT(use_attn=False)` is the Step 2 model.
+  45,921 parameters = 29,537 (Step 2) + 4 × 64 × 64 (W_q, W_k, W_v, W_o)
+- `train.py`: also prints the best possible loss when the model can see all earlier words
+- `explore.py`: section 7 compares Step 2 vs Step 3, section 8 saves the attention map `attention.png`
+
+| | val loss | best possible | "he is a" / "she is a" | "the cow lives on the" / "the monkey lives in the" |
+|---|---|---|---|---|
+| Step 2 | 1.27 | 1.26 (sees word + position) | identical predictions | farm 0.14 / farm 0.14 |
+| **Step 3** | **0.90** | 0.89 (sees all earlier words) | student, doctor, man / woman, girl | **farm 1.00 / trees 0.73** |
+
+```bash
+python train.py      # ~1 min on CPU
+python explore.py    # attention.png: who looks at whom
+```
+
+Next (Step 4, one piece at a time): 4a multi-head attention, 4b residual connection, 4c LayerNorm,
+4d feed-forward network, 4e stacking blocks.
+
+## Step 2: token + positional embeddings
 
 ```
 token IDs (B, T)

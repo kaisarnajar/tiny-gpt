@@ -1,4 +1,4 @@
-"""Train the Step 2 model (token + positional embeddings) with AdamW and cross-entropy.
+"""Train the Step 3 model (embeddings + causal self-attention) with AdamW and cross-entropy.
 
 Each sentence is turned into next-word questions:
     tokens : the  cat  eats  fish  .  <eos> <pad> <pad>      (padded to CONTEXT_LEN)
@@ -49,8 +49,12 @@ def load_data(tokenizer: Tokenizer):
     return X[n_val:], Y[n_val:], X[:n_val], Y[:n_val]
 
 
-def best_possible_loss(X: torch.Tensor, Y: torch.Tensor, pad_id: int, use_pos: bool = True) -> float:
-    """Lowest loss ANY model can reach if it only sees (current token, position).
+def best_possible_loss(X: torch.Tensor, Y: torch.Tensor, pad_id: int, use_pos: bool = True,
+                       prefix: bool = False) -> float:
+    """Lowest loss ANY model can reach on this data, given what it is allowed to see.
+
+    prefix=False: only (current token, position)  -> the limit of the Step 2 model
+    prefix=True : all words so far                -> the limit of a model with attention
 
     This is the uncertainty left in the data: e.g. after "the" at position 0 there
     are many valid subjects, so even a perfect model can't get the loss to 0.
@@ -59,7 +63,8 @@ def best_possible_loss(X: torch.Tensor, Y: torch.Tensor, pad_id: int, use_pos: b
     for x_row, y_row in zip(X.tolist(), Y.tolist()):
         for pos, (x, y) in enumerate(zip(x_row, y_row)):
             if y != pad_id:
-                counts[(x, pos) if use_pos else x][y] += 1
+                key = tuple(x_row[: pos + 1]) if prefix else (x, pos) if use_pos else x
+                counts[key][y] += 1
     total = sum(sum(c.values()) for c in counts.values())
     loss = 0.0
     for c in counts.values():
@@ -77,24 +82,29 @@ def evaluate(model: GPT, X: torch.Tensor, Y: torch.Tensor, loss_fn) -> float:
     return loss.item()
 
 
-def train(use_pos: bool = True, epochs: int = EPOCHS, verbose: bool = True, save_path: str | None = MODEL_PATH):
+def train(use_pos: bool = True, use_attn: bool = True, epochs: int = EPOCHS, verbose: bool = True,
+          save_path: str | None = MODEL_PATH):
     """Train a model and return (model, tokenizer, info)."""
     torch.manual_seed(SEED)
     tokenizer = Tokenizer.from_corpus(CORPUS_PATH)
     X_train, Y_train, X_val, Y_val = load_data(tokenizer)
     V = tokenizer.vocab_size
 
-    model = GPT(V, d_model=D_MODEL, context_len=CONTEXT_LEN, use_pos=use_pos)
+    model = GPT(V, d_model=D_MODEL, context_len=CONTEXT_LEN, use_pos=use_pos, use_attn=use_attn)
     # Takes RAW logits: it applies log-softmax internally. Don't softmax before it.
     loss_fn = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_id)
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
 
-    best = best_possible_loss(X_train, Y_train, tokenizer.pad_id, use_pos)
+    best_no_attn = best_possible_loss(X_train, Y_train, tokenizer.pad_id, use_pos)
+    best_prefix = best_possible_loss(X_train, Y_train, tokenizer.pad_id, prefix=True)
+    best = best_prefix if use_attn else best_no_attn
     if verbose:
         print(f"Data      : {len(X_train):,} train / {len(X_val):,} val sentences, vocab {V}")
         print("Parameters: " + ", ".join(f"{k} {v:,}" for k, v in count_parameters(model).items()))
         print(f"Steps     : {math.ceil(len(X_train) / BATCH_SIZE)} per epoch x {epochs} epochs")
-        print(f"Uniform-guess loss ln({V}) = {math.log(V):.3f} | best possible loss = {best:.3f}\n")
+        print(f"Uniform-guess loss ln({V}) = {math.log(V):.3f}")
+        print(f"Best possible loss: {best_no_attn:.3f} seeing only (word, position) [Step 2] | "
+              f"{best_prefix:.3f} seeing all words so far [attention]\n")
         print(f"start        | val loss {evaluate(model, X_val, Y_val, loss_fn):.4f}")
 
     start = time.time()
@@ -127,7 +137,8 @@ def train(use_pos: bool = True, epochs: int = EPOCHS, verbose: bool = True, save
         torch.save(
             {
                 "state_dict": model.state_dict(),
-                "config": {"vocab_size": V, "d_model": D_MODEL, "context_len": CONTEXT_LEN, "use_pos": use_pos},
+                "config": {"vocab_size": V, "d_model": D_MODEL, "context_len": CONTEXT_LEN, "use_pos": use_pos,
+                           "use_attn": use_attn},
                 "vocab": tokenizer.itos,
             },
             save_path,

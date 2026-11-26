@@ -165,7 +165,7 @@ function App() {
     <div className="chat">
       <header className="chat-header">
         <h1>tiny-gpt</h1>
-        <span className="chat-header-note">Step 2 · embeddings + sampling</span>
+        <span className="chat-header-note">Step 3 · attention</span>
         {info && (
           <button
             type="button"

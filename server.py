@@ -54,6 +54,10 @@ def info():
     if model.use_pos:
         layers.append({"name": "Position embedding", "shape": f"{T} × {d}", "formula": "context_len × d_model",
                        "calculation": f"{T} × {d}", "params": T * d})
+    if model.use_attn:
+        for name, role in (("W_q", "query"), ("W_k", "key"), ("W_v", "value"), ("W_o", "output projection")):
+            layers.append({"name": f"Attention {name} ({role})", "shape": f"{d} × {d}",
+                           "formula": "d_model × d_model", "calculation": f"{d} × {d}", "params": d * d})
     layers += [
         {"name": "Output layer weights", "shape": f"{d} × {V}", "formula": "d_model × vocab_size",
          "calculation": f"{d} × {V}", "params": d * V},
