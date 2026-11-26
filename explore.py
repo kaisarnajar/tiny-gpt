@@ -1,7 +1,7 @@
-"""Look inside the trained model: embeddings (Step 2) and multi-head attention (Steps 3 and 4a).
+"""Look inside the trained model: embeddings (Step 2), multi-head attention (Steps 3, 4a), residual (Step 4b).
 
     python train.py      # first, creates model.pt
-    python explore.py    # prints 8 sections, saves embeddings.png and attention.png
+    python explore.py    # prints 9 sections, saves embeddings.png and attention.png
 
 1. Shapes            what the embedding tables look like
 2. Softmax           raw scores -> probabilities (manual vs PyTorch)
@@ -11,6 +11,7 @@
 6. Position matters  Step 2 model trained with vs without positional embeddings
 7. Attention fixes   he/she and cow/monkey: Step 2 model vs this model
 8. Attention map     who looks at whom, one map per head -> attention.png
+9. Residual          what the word itself and what attention each tell the output layer
 """
 
 import math
@@ -194,6 +195,27 @@ def main():
     fig.tight_layout()
     fig.savefig(ATTN_PATH, dpi=150)
     print(f"\nSaved {ATTN_PATH}. Each head has its own pattern: compare the rows of the same word across heads.")
+
+    # 9 ---------------------------------------------------------------------
+    header("9. Residual connection: x + attention(x)")
+    if not model.residual:
+        print("This model has no residual connection (x = attention(x)). Train with RESIDUAL = True.")
+        return
+    for prompt in ["he is a", "the cow lives on the"]:
+        ids = torch.tensor([tok.encode(prompt)])
+        with torch.no_grad():
+            x = model.token_emb(ids) + model.pos_emb(torch.arange(ids.shape[1]))  # the words themselves
+            a = model.attn(x)  # what attention gathered
+        last = ids.shape[1] - 1
+        print(f"\n'{prompt}': row '{prompt.split()[-1]}' (size of the vectors: |x| {x[0, last].norm():.1f}, "
+              f"|attention| {a[0, last].norm():.1f})")
+        for name, vec in (("x alone (the word)", x), ("attention alone", a), ("x + attention", x + a)):
+            with torch.no_grad():
+                p, i = torch.softmax(model.lm_head(vec[0, last]), -1).topk(3)
+            guesses = " | ".join(f"{tok.itos[j]} {q:.2f}" for q, j in zip(p.tolist(), i.tolist()))
+            print(f"  {name:>20} -> {guesses}")
+    print("\nThe output layer was trained on x + attention, so the halves alone are only a rough look inside. "
+          "The word itself says WHAT kind of word comes next; attention brings in the earlier words.")
 
 
 if __name__ == "__main__":

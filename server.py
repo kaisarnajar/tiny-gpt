@@ -69,7 +69,7 @@ def info():
     assert total == sum(p.numel() for p in model.parameters()), "breakdown doesn't match the model"
     return {
         "config": {"vocab_size": V, "d_model": d, "context_len": T,
-                   "n_heads": model.n_heads if model.use_attn else 0},
+                   "n_heads": model.n_heads if model.use_attn else 0, "residual": model.use_attn and model.residual},
         "layers": layers,
         "total": total,
         "equation": " + ".join(layer["calculation"].replace(" × ", "·") for layer in layers) + f" = {total:,}",

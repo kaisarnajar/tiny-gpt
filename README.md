@@ -2,7 +2,27 @@
 
 Building a GPT step by step.
 
-## Step 4a: multi-head attention (current)
+## Step 4b: residual connection (current)
+
+```
+x = token_emb + pos_emb
+x = x + attention(x)        # was: x = attention(x)
+logits = lm_head(x)
+```
+
+The word keeps its own vector and ADDS what attention gathered, instead of being replaced by it.
+No new parameters (still 45,921). `GPT(residual=True)`, `RESIDUAL = True` in `train.py`.
+
+| | val loss | epoch 1 val loss |
+|---|---|---|
+| Step 3 (1 head) | 0.904 | 1.008 |
+| Step 4a (4 heads) | 0.906 | 0.950 |
+| **Step 4b (4 heads + residual)** | **0.901** | **0.944** |
+
+`explore.py` section 9 shows what each part tells the output layer, e.g. for "the cow lives on the":
+x alone → house / jungle / forest (a place comes next), attention alone → farm 0.74, x + attention → farm 1.00.
+
+## Step 4a: multi-head attention
 
 ```
 Q, K, V = x·W_q, x·W_k, x·W_v             (B, T, 64) each, same 64 × 64 matrices as Step 3
@@ -51,7 +71,7 @@ python train.py      # ~1 min on CPU
 python explore.py    # attention.png: who looks at whom
 ```
 
-Next (Step 4, one piece at a time): 4a multi-head attention (done), 4b residual connection, 4c LayerNorm,
+Next (Step 4, one piece at a time): 4a multi-head attention (done), 4b residual connection (done), 4c LayerNorm,
 4d feed-forward network, 4e stacking blocks.
 
 ## Step 2: token + positional embeddings

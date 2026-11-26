@@ -1,13 +1,14 @@
-"""Step 4a model: token + positional embeddings -> multi-head causal self-attention -> linear output layer.
+"""Step 4b model: token + positional embeddings -> multi-head causal self-attention (+ residual) -> output layer.
 
     token IDs (B, T)
        ├─ token_emb = Embedding(vocab_size, d_model)   -> (B, T, d)   "what the word is"
        └─ pos_emb   = Embedding(context_len, d_model)  -> (T, d)      "where it is"
     x      = token_emb + pos_emb                       -> (B, T, d)   (pos is broadcast over B)
-    x      = attn(x)                                   -> (B, T, d)   each word mixes in earlier words
+    x      = x + attn(x)                               -> (B, T, d)   residual: the word keeps itself and
+                                                                      ADDS what attention gathered
     logits = lm_head(x)  Linear(d_model, vocab_size)   -> (B, T, V)   one score per word
 
-Multi-head attention (no residual yet; that is Step 4b). h heads of hs = d / h numbers each:
+Multi-head attention, h heads of hs = d / h numbers each:
     Q, K, V = x·W_q, x·W_k, x·W_v                      (B, T, d) each
     split   : head i gets columns i·hs .. i·hs+hs-1    (B, h, T, hs) each
     scores  = Q·Kᵀ / √hs                               (B, h, T, T)  per head: how well word i matches j
@@ -65,12 +66,13 @@ class CausalSelfAttention(nn.Module):
 
 class GPT(nn.Module):
     def __init__(self, vocab_size: int, d_model: int = 64, context_len: int = 8, use_pos: bool = True,
-                 use_attn: bool = True, n_heads: int = 1):
+                 use_attn: bool = True, n_heads: int = 1, residual: bool = False):
         super().__init__()
         self.context_len = context_len
         self.use_pos = use_pos
         self.use_attn = use_attn  # False = the Step 2 model
         self.n_heads = n_heads  # 1 = the Step 3 model
+        self.residual = residual  # False = the attention output replaces x (Steps 3 and 4a)
         self.token_emb = nn.Embedding(vocab_size, d_model)  # (V, d): one row per word
         self.pos_emb = nn.Embedding(context_len, d_model)  # (T_max, d): one row per position
         self.attn = CausalSelfAttention(d_model, context_len, n_heads) if use_attn else None
@@ -84,7 +86,10 @@ class GPT(nn.Module):
             positions = torch.arange(T, device=idx.device)  # [0, 1, ..., T-1]
             x = x + self.pos_emb(positions)  # (T, d) broadcast over the batch
         if self.use_attn:
-            x = self.attn(x)  # (B, T, d): replaced by the attention output (residual comes in Step 4)
+            if self.residual:
+                x = x + self.attn(x)  # (B, T, d): keep x, add what attention gathered (Step 4b)
+            else:
+                x = self.attn(x)  # (B, T, d): replaced by the attention output (Steps 3 and 4a)
         return self.lm_head(x)  # (B, T, V) raw scores, NOT probabilities
 
 
