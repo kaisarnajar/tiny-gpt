@@ -53,7 +53,7 @@ export default function App() {
     <div className="chat">
       <header className="chat-header">
         <h1>tiny-gpt</h1>
-        <span className="chat-header-note">Step 4b · residual connection</span>
+        <span className="chat-header-note">Step 4c · LayerNorm</span>
         <button type="button" className="params-toggle" onClick={() => setShowParams(!showParams)}>
           {total.toLocaleString('en-US')} parameters {showParams ? '▴' : '▾'}
         </button>

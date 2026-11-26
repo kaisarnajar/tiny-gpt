@@ -34,11 +34,13 @@ class GPT(nn.Module):
         self.context_len = context_len
         self.token_emb = nn.Embedding(vocab_size, d_model)
         self.pos_emb = nn.Embedding(context_len, d_model)
+        self.ln1 = nn.LayerNorm(d_model)
         self.attn = Attention(d_model, context_len, n_heads)
+        self.ln_f = nn.LayerNorm(d_model)
         self.lm_head = nn.Linear(d_model, vocab_size)
 
     def forward(self, idx):
         T = idx.shape[1]
         x = self.token_emb(idx) + self.pos_emb(torch.arange(T))
-        x = x + self.attn(x)
-        return self.lm_head(x)
+        x = x + self.attn(self.ln1(x))
+        return self.lm_head(self.ln_f(x))
