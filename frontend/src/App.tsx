@@ -15,7 +15,7 @@ type Sampling = { temperature: number; top_k: number; top_p: number }
 const DEFAULT_SAMPLING: Sampling = { temperature: 1.0, top_k: 0, top_p: 0.9 }
 
 type ModelInfo = {
-  config: { vocab_size: number; d_model: number; context_len: number }
+  config: { vocab_size: number; d_model: number; context_len: number; n_heads: number }
   layers: { name: string; shape: string; formula: string; calculation: string; params: number }[]
   total: number
   equation: string
@@ -25,11 +25,12 @@ type ModelInfo = {
 const fmt = (n: number) => n.toLocaleString('en-US')
 
 function ParametersPanel({ info }: { info: ModelInfo }) {
-  const { vocab_size, d_model, context_len } = info.config
+  const { vocab_size, d_model, context_len, n_heads } = info.config
   return (
     <section className="params" aria-label="Parameter calculation">
       <p className="params-config">
         vocab_size = {vocab_size} · d_model = {d_model} · context_len = {context_len}
+        {n_heads > 0 && ` · n_heads = ${n_heads} (head size ${d_model / n_heads})`}
       </p>
       <table>
         <thead>
@@ -165,7 +166,7 @@ function App() {
     <div className="chat">
       <header className="chat-header">
         <h1>tiny-gpt</h1>
-        <span className="chat-header-note">Step 3 · attention</span>
+        <span className="chat-header-note">Step 4a · multi-head attention</span>
         {info && (
           <button
             type="button"

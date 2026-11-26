@@ -56,7 +56,8 @@ def info():
                        "calculation": f"{T} × {d}", "params": T * d})
     if model.use_attn:
         for name, role in (("W_q", "query"), ("W_k", "key"), ("W_v", "value"), ("W_o", "output projection")):
-            layers.append({"name": f"Attention {name} ({role})", "shape": f"{d} × {d}",
+            heads = f", {model.n_heads} heads × {d // model.n_heads}" if model.n_heads > 1 else ""
+            layers.append({"name": f"Attention {name} ({role}{heads})", "shape": f"{d} × {d}",
                            "formula": "d_model × d_model", "calculation": f"{d} × {d}", "params": d * d})
     layers += [
         {"name": "Output layer weights", "shape": f"{d} × {V}", "formula": "d_model × vocab_size",
@@ -67,7 +68,8 @@ def info():
     total = sum(layer["params"] for layer in layers)
     assert total == sum(p.numel() for p in model.parameters()), "breakdown doesn't match the model"
     return {
-        "config": {"vocab_size": V, "d_model": d, "context_len": T},
+        "config": {"vocab_size": V, "d_model": d, "context_len": T,
+                   "n_heads": model.n_heads if model.use_attn else 0},
         "layers": layers,
         "total": total,
         "equation": " + ".join(layer["calculation"].replace(" × ", "·") for layer in layers) + f" = {total:,}",

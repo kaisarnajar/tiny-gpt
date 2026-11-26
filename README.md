@@ -2,7 +2,30 @@
 
 Building a GPT step by step.
 
-## Step 3: causal self-attention (current)
+## Step 4a: multi-head attention (current)
+
+```
+Q, K, V = x·W_q, x·W_k, x·W_v             (B, T, 64) each, same 64 × 64 matrices as Step 3
+split   : 4 heads × 16 columns            (B, 4, T, 16)
+scores  = Q·Kᵀ / √16                      (B, 4, T, T)  every head has its own attention pattern
+x       = join(softmax(scores) · V) · W_o (B, T, 64)    heads side by side, then mixed by W_o
+```
+
+- `model.py`: `CausalSelfAttention(n_heads=...)`, `GPT(n_heads=...)`; `n_heads=1` is exactly Step 3
+- `train.py`: `N_HEADS = 4`, saved in `model.pt`
+- `explore.py`: section 8 draws one attention map per head (`attention.png`)
+- Parameters unchanged: 45,921 (the columns are only cut into groups)
+
+| | val loss | epoch 1 val loss |
+|---|---|---|
+| Step 3 (1 head) | 0.904 | 1.008 |
+| **Step 4a (4 heads)** | **0.906** | **0.950** |
+
+Same final loss, faster start. The heads specialise: for "a" in "he is a doctor ." head 4 looks at "he" (1.00),
+head 3 at "is"; for the second "the" in "the cow lives on the farm ." head 1 looks at "cow" (1.00).
+On its own 4a gains little; it pays off together with the next steps (4b residual, 4c LayerNorm, 4d FFN, 4e blocks).
+
+## Step 3: causal self-attention
 
 ```
 x      = token_emb + pos_emb              (B, T, 64)
@@ -28,7 +51,7 @@ python train.py      # ~1 min on CPU
 python explore.py    # attention.png: who looks at whom
 ```
 
-Next (Step 4, one piece at a time): 4a multi-head attention, 4b residual connection, 4c LayerNorm,
+Next (Step 4, one piece at a time): 4a multi-head attention (done), 4b residual connection, 4c LayerNorm,
 4d feed-forward network, 4e stacking blocks.
 
 ## Step 2: token + positional embeddings

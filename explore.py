@@ -1,4 +1,4 @@
-"""Look inside the trained model: embeddings (Step 2) and attention (Step 3).
+"""Look inside the trained model: embeddings (Step 2) and multi-head attention (Steps 3 and 4a).
 
     python train.py      # first, creates model.pt
     python explore.py    # prints 8 sections, saves embeddings.png and attention.png
@@ -9,8 +9,8 @@
 4. Similarity        nearest words by cosine similarity
 5. 2D picture        PCA of the word embeddings -> embeddings.png
 6. Position matters  Step 2 model trained with vs without positional embeddings
-7. Attention fixes   he/she and cow/monkey: Step 2 model vs Step 3 model
-8. Attention map     who looks at whom -> attention.png
+7. Attention fixes   he/she and cow/monkey: Step 2 model vs this model
+8. Attention map     who looks at whom, one map per head -> attention.png
 """
 
 import math
@@ -154,42 +154,46 @@ def main():
           "which part of the sentence it is in.")
 
     # 7 ---------------------------------------------------------------------
-    header("7. What attention fixes: Step 2 model (no attention) vs Step 3 model (this model.pt)")
+    header("7. What attention fixes: Step 2 model (no attention) vs this model (model.pt)")
     step2 = results[True][0]  # the Step 2 model with position from section 6
     for prompt in ["he is a", "she is a", "the cow lives on the", "the monkey lives in the"]:
         print(f"{prompt!r:>27}")
         print(f"{'Step 2':>27} -> {top_words(step2, tok, prompt, k=4)}")
-        print(f"{'Step 3':>27} -> {top_words(model, tok, prompt, k=4)}")
+        print(f"{'attention':>27} -> {top_words(model, tok, prompt, k=4)}")
     print("Step 2 sees only the LAST word and its position, so each pair gets identical predictions. "
-          "Step 3 looks back at 'he'/'she' and 'cow'/'monkey' through attention.")
+          "With attention the model looks back at 'he'/'she' and 'cow'/'monkey'.")
 
     # 8 ---------------------------------------------------------------------
     sentences = ["he is a doctor .", "the cow lives on the farm ."]
-    header(f"8. Attention map: who looks at whom -> {ATTN_PATH}")
-    fig, axes = plt.subplots(1, len(sentences), figsize=(6 * len(sentences), 5.2))
-    for ax, sentence in zip(axes, sentences):
+    n_heads = model.attn.n_heads
+    header(f"8. Attention map: who looks at whom, {n_heads} heads -> {ATTN_PATH}")
+    fig, axes = plt.subplots(len(sentences), n_heads, figsize=(3.6 * n_heads, 3.6 * len(sentences)),
+                             squeeze=False)
+    for row, sentence in enumerate(sentences):
         words = sentence.split()
         with torch.no_grad():
             model(torch.tensor([tok.encode(sentence)]))
-        w = model.attn.last_weights[0]  # (T, T): row = word doing the looking, column = word looked at
-        print(f"\n'{sentence}' (each row sums to 1; only the words at or before it)")
-        for i, word in enumerate(words):
-            row = ", ".join(f"{words[j]} {w[i, j]:.2f}" for j in range(i + 1))
-            print(f"  {word:>7} looks at: {row}")
-        ax.imshow(w.numpy(), cmap="Purples", vmin=0, vmax=1)
-        ax.set_xticks(range(len(words)), words, rotation=45, ha="right")
-        ax.set_yticks(range(len(words)), words)
-        for i in range(len(words)):
-            for j in range(len(words)):
-                if j <= i:
-                    ax.text(j, i, f"{w[i, j]:.2f}", ha="center", va="center", fontsize=8,
+        weights = model.attn.last_weights[0]  # (h, T, T): per head, row = word looking, column = word looked at
+        last = len(words) - 3  # the word that must predict the answer: "a" -> doctor, second "the" -> farm
+        print(f"\n'{sentence}': what '{words[last]}' looks at, per head (each row sums to 1)")
+        for h in range(n_heads):
+            w = weights[h]
+            row_text = ", ".join(f"{words[j]} {w[last, j]:.2f}" for j in range(last + 1))
+            print(f"  head {h + 1}: {row_text}")
+            ax = axes[row][h]
+            ax.imshow(w.numpy(), cmap="Purples", vmin=0, vmax=1)
+            ax.set_xticks(range(len(words)), words, rotation=45, ha="right", fontsize=8)
+            ax.set_yticks(range(len(words)), words, fontsize=8)
+            for i in range(len(words)):
+                for j in range(i + 1):
+                    ax.text(j, i, f"{w[i, j]:.2f}", ha="center", va="center", fontsize=6,
                             color="white" if w[i, j] > 0.55 else "black")
-        ax.set_xlabel("key: word being looked at")
-        ax.set_ylabel("query: word doing the looking")
-        ax.set_title(f"'{sentence}'")
+            ax.set_title(f"head {h + 1}: '{sentence}'", fontsize=8)
+    fig.supxlabel("key: word being looked at")
+    fig.supylabel("query: word doing the looking")
     fig.tight_layout()
     fig.savefig(ATTN_PATH, dpi=150)
-    print(f"\nSaved {ATTN_PATH}. Look at the row of the word that has to predict the next word.")
+    print(f"\nSaved {ATTN_PATH}. Each head has its own pattern: compare the rows of the same word across heads.")
 
 
 if __name__ == "__main__":

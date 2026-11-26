@@ -1,4 +1,4 @@
-"""Step 3 model: token + positional embeddings -> causal self-attention -> linear output layer.
+"""Step 4a model: token + positional embeddings -> multi-head causal self-attention -> linear output layer.
 
     token IDs (B, T)
        ├─ token_emb = Embedding(vocab_size, d_model)   -> (B, T, d)   "what the word is"
@@ -7,12 +7,15 @@
     x      = attn(x)                                   -> (B, T, d)   each word mixes in earlier words
     logits = lm_head(x)  Linear(d_model, vocab_size)   -> (B, T, V)   one score per word
 
-Attention (one head, no residual yet; both come in Step 4):
+Multi-head attention (no residual yet; that is Step 4b). h heads of hs = d / h numbers each:
     Q, K, V = x·W_q, x·W_k, x·W_v                      (B, T, d) each
-    scores  = Q·Kᵀ / √d                                (B, T, T)  how well word i matches word j
+    split   : head i gets columns i·hs .. i·hs+hs-1    (B, h, T, hs) each
+    scores  = Q·Kᵀ / √hs                               (B, h, T, T)  per head: how well word i matches j
     scores  = -inf above the diagonal                  causal mask: no looking at the future
-    weights = softmax(scores)                          (B, T, T)  each row sums to 1
-    out     = (weights · V) · W_o                      (B, T, d)
+    weights = softmax(scores)                          (B, h, T, T)  each row sums to 1
+    heads   = weights · V                              (B, h, T, hs)
+    out     = join(heads) · W_o                        (B, T, d)     heads side by side, then mixed
+With n_heads = 1 this is exactly the Step 3 model.
 """
 
 import math
@@ -22,40 +25,55 @@ import torch.nn as nn
 
 
 class CausalSelfAttention(nn.Module):
-    """One attention head over the full d_model (Step 3). Written out by hand, step by step."""
+    """Multi-head causal self-attention (Step 4a). Written out by hand, step by step.
 
-    def __init__(self, d_model: int, context_len: int):
+    The four d × d matrices are the same as in Step 3; their columns are only cut into n_heads groups,
+    so the number of parameters does not change with n_heads.
+    """
+
+    def __init__(self, d_model: int, context_len: int, n_heads: int = 1):
         super().__init__()
+        assert d_model % n_heads == 0, f"d_model {d_model} must be divisible by n_heads {n_heads}"
         self.d_model = d_model
+        self.n_heads = n_heads
+        self.head_size = d_model // n_heads  # hs: numbers per head
         self.W_q = nn.Linear(d_model, d_model, bias=False)  # "what am I looking for?"
         self.W_k = nn.Linear(d_model, d_model, bias=False)  # "what do I offer?"
         self.W_v = nn.Linear(d_model, d_model, bias=False)  # "what information do I hand over?"
-        self.W_o = nn.Linear(d_model, d_model, bias=False)  # output projection
+        self.W_o = nn.Linear(d_model, d_model, bias=False)  # output projection: mixes the heads
         # mask[i, j] = True where word i may look at word j (j <= i). A buffer: saved, but not learned.
         self.register_buffer("mask", torch.tril(torch.ones(context_len, context_len, dtype=torch.bool)))
-        self.last_weights = None  # (B, T, T) from the latest forward pass, for explore.py
+        self.last_weights = None  # (B, h, T, T) from the latest forward pass, for explore.py
+
+    def split_heads(self, t: torch.Tensor) -> torch.Tensor:
+        """(B, T, d) -> (B, h, T, hs): head i gets columns i*hs .. i*hs + hs - 1."""
+        B, T, _ = t.shape
+        return t.view(B, T, self.n_heads, self.head_size).transpose(1, 2)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, T, d = x.shape
         Q, K, V = self.W_q(x), self.W_k(x), self.W_v(x)  # (B, T, d) each
-        scores = Q @ K.transpose(-2, -1) / math.sqrt(d)  # (B, T, T)
-        scores = scores.masked_fill(~self.mask[:T, :T], float("-inf"))  # hide future words
-        weights = torch.softmax(scores, dim=-1)  # (B, T, T), each row sums to 1
+        Q, K, V = self.split_heads(Q), self.split_heads(K), self.split_heads(V)  # (B, h, T, hs) each
+        scores = Q @ K.transpose(-2, -1) / math.sqrt(self.head_size)  # (B, h, T, T)
+        scores = scores.masked_fill(~self.mask[:T, :T], float("-inf"))  # hide future words (every head)
+        weights = torch.softmax(scores, dim=-1)  # (B, h, T, T), each row sums to 1
         self.last_weights = weights.detach()
-        out = weights @ V  # (B, T, d): weighted average of the value vectors
+        heads = weights @ V  # (B, h, T, hs): per head, a weighted average of its value vectors
+        out = heads.transpose(1, 2).reshape(B, T, d)  # join: heads side by side again -> (B, T, d)
         return self.W_o(out)  # (B, T, d)
 
 
 class GPT(nn.Module):
     def __init__(self, vocab_size: int, d_model: int = 64, context_len: int = 8, use_pos: bool = True,
-                 use_attn: bool = True):
+                 use_attn: bool = True, n_heads: int = 1):
         super().__init__()
         self.context_len = context_len
         self.use_pos = use_pos
         self.use_attn = use_attn  # False = the Step 2 model
+        self.n_heads = n_heads  # 1 = the Step 3 model
         self.token_emb = nn.Embedding(vocab_size, d_model)  # (V, d): one row per word
         self.pos_emb = nn.Embedding(context_len, d_model)  # (T_max, d): one row per position
-        self.attn = CausalSelfAttention(d_model, context_len) if use_attn else None
+        self.attn = CausalSelfAttention(d_model, context_len, n_heads) if use_attn else None
         self.lm_head = nn.Linear(d_model, vocab_size)  # d -> V scores (logits)
 
     def forward(self, idx: torch.Tensor) -> torch.Tensor:

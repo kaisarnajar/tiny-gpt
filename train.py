@@ -1,4 +1,4 @@
-"""Train the Step 3 model (embeddings + causal self-attention) with AdamW and cross-entropy.
+"""Train the Step 4a model (embeddings + multi-head causal self-attention) with AdamW and cross-entropy.
 
 Each sentence is turned into next-word questions:
     tokens : the  cat  eats  fish  .  <eos> <pad> <pad>      (padded to CONTEXT_LEN)
@@ -22,6 +22,7 @@ CORPUS_PATH = "data/corpus.txt"
 MODEL_PATH = "model.pt"
 
 D_MODEL = 64
+N_HEADS = 4  # attention heads: 4 × 16 numbers (1 = the Step 3 model)
 CONTEXT_LEN = 8
 EPOCHS = 100
 BATCH_SIZE = 64
@@ -82,15 +83,15 @@ def evaluate(model: GPT, X: torch.Tensor, Y: torch.Tensor, loss_fn) -> float:
     return loss.item()
 
 
-def train(use_pos: bool = True, use_attn: bool = True, epochs: int = EPOCHS, verbose: bool = True,
-          save_path: str | None = MODEL_PATH):
+def train(use_pos: bool = True, use_attn: bool = True, n_heads: int = N_HEADS, epochs: int = EPOCHS,
+          verbose: bool = True, save_path: str | None = MODEL_PATH):
     """Train a model and return (model, tokenizer, info)."""
     torch.manual_seed(SEED)
     tokenizer = Tokenizer.from_corpus(CORPUS_PATH)
     X_train, Y_train, X_val, Y_val = load_data(tokenizer)
     V = tokenizer.vocab_size
 
-    model = GPT(V, d_model=D_MODEL, context_len=CONTEXT_LEN, use_pos=use_pos, use_attn=use_attn)
+    model = GPT(V, d_model=D_MODEL, context_len=CONTEXT_LEN, use_pos=use_pos, use_attn=use_attn, n_heads=n_heads)
     # Takes RAW logits: it applies log-softmax internally. Don't softmax before it.
     loss_fn = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_id)
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
@@ -101,6 +102,8 @@ def train(use_pos: bool = True, use_attn: bool = True, epochs: int = EPOCHS, ver
     if verbose:
         print(f"Data      : {len(X_train):,} train / {len(X_val):,} val sentences, vocab {V}")
         print("Parameters: " + ", ".join(f"{k} {v:,}" for k, v in count_parameters(model).items()))
+        if use_attn:
+            print(f"Attention : {n_heads} heads × {D_MODEL // n_heads} numbers")
         print(f"Steps     : {math.ceil(len(X_train) / BATCH_SIZE)} per epoch x {epochs} epochs")
         print(f"Uniform-guess loss ln({V}) = {math.log(V):.3f}")
         print(f"Best possible loss: {best_no_attn:.3f} seeing only (word, position) [Step 2] | "
@@ -138,7 +141,7 @@ def train(use_pos: bool = True, use_attn: bool = True, epochs: int = EPOCHS, ver
             {
                 "state_dict": model.state_dict(),
                 "config": {"vocab_size": V, "d_model": D_MODEL, "context_len": CONTEXT_LEN, "use_pos": use_pos,
-                           "use_attn": use_attn},
+                           "use_attn": use_attn, "n_heads": n_heads},
                 "vocab": tokenizer.itos,
             },
             save_path,
