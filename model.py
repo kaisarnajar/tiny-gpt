@@ -39,22 +39,33 @@ class FFN(nn.Module):
         return self.fc2(F.gelu(self.fc1(x)))
 
 
-class GPT(nn.Module):
-    def __init__(self, vocab_size, d_model, context_len, n_heads):
+class Block(nn.Module):
+    def __init__(self, d_model, context_len, n_heads):
         super().__init__()
-        self.context_len = context_len
-        self.token_emb = nn.Embedding(vocab_size, d_model)
-        self.pos_emb = nn.Embedding(context_len, d_model)
         self.ln1 = nn.LayerNorm(d_model)
         self.attn = Attention(d_model, context_len, n_heads)
         self.ln2 = nn.LayerNorm(d_model)
         self.ffn = FFN(d_model)
+
+    def forward(self, x):
+        x = x + self.attn(self.ln1(x))
+        x = x + self.ffn(self.ln2(x))
+        return x
+
+
+class GPT(nn.Module):
+    def __init__(self, vocab_size, d_model, context_len, n_heads, n_layers):
+        super().__init__()
+        self.context_len = context_len
+        self.token_emb = nn.Embedding(vocab_size, d_model)
+        self.pos_emb = nn.Embedding(context_len, d_model)
+        self.blocks = nn.ModuleList([Block(d_model, context_len, n_heads) for _ in range(n_layers)])
         self.ln_f = nn.LayerNorm(d_model)
         self.lm_head = nn.Linear(d_model, vocab_size)
 
     def forward(self, idx):
         T = idx.shape[1]
         x = self.token_emb(idx) + self.pos_emb(torch.arange(T))
-        x = x + self.attn(self.ln1(x))
-        x = x + self.ffn(self.ln2(x))
+        for block in self.blocks:
+            x = block(x)
         return self.lm_head(self.ln_f(x))

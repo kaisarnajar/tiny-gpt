@@ -2,16 +2,19 @@
 
 Building a GPT step by step.
 
-## The model now (Step 4d)
+## The model now (Step 4e)
 
 ```
-x      = token_emb + pos_emb        (B, T, 64)
-x      = x + attention(ln1(x))      LayerNorm, then 4 heads × 16, causal mask, residual
-x      = x + ffn(ln2(x))            LayerNorm, then FFN 64 → 256 → GELU → 64, residual
+x = token_emb + pos_emb             (B, T, 64)
+
+for block in blocks:                2 blocks, each with its own weights
+    x = x + attention(ln1(x))       LayerNorm, then 4 heads × 16, causal mask, residual
+    x = x + ffn(ln2(x))             LayerNorm, then FFN 64 → 256 → GELU → 64, residual
+
 logits = lm_head(ln_f(x))           final LayerNorm, then (B, T, 225)
 ```
 
-79,393 parameters · val loss 0.895 (best possible on this data: 0.89)
+129,121 parameters · val loss 0.894 (best possible on this data: 0.89)
 
 ## Files
 
@@ -19,7 +22,7 @@ logits = lm_head(ln_f(x))           final LayerNorm, then (B, T, 225)
 |---|---|
 | `data.py` | makes `data/corpus.txt`: 50,000 simple sentences ("the cow eats grass .") |
 | `tokenizer.py` | word ↔ number, `<pad>` = 0, `<eos>` = 1 |
-| `model.py` | `Attention`, `FFN` and `GPT` |
+| `model.py` | `Attention`, `FFN`, `Block` and `GPT` |
 | `train.py` | trains for 100 epochs and saves `model.pt` |
 | `generate.py` | finishes a sentence (temperature, top-k, top-p) |
 | `explore.py` | parameters, next-word guesses, similar words, `attention.png` |
@@ -52,4 +55,5 @@ python server.py                 # http://localhost:8000
 | 4b | residual connection: `x = x + attention(x)` | 0.901 |
 | 4c | LayerNorm before attention and before the output layer | 0.899 |
 | 4d | feed-forward network: 64 → 256 → GELU → 64 | 0.895 |
-| 4e | stacked blocks | next |
+| 4e | 2 stacked blocks (`N_LAYERS = 2`) | 0.894 |
+| 5 | BPE tokenizer and code data | next |

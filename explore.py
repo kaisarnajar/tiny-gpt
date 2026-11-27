@@ -37,14 +37,17 @@ print("\nAttention for 'he is a doctor .' (saved to attention.png)")
 words = "he is a doctor .".split()
 with torch.no_grad():
     model(torch.tensor([tokenizer.encode(" ".join(words))]))
-weights = model.attn.weights[0]
-fig, axes = plt.subplots(1, len(weights), figsize=(4 * len(weights), 4))
-for h, ax in enumerate(axes):
-    ax.imshow(weights[h].numpy(), cmap="Purples", vmin=0, vmax=1)
-    ax.set_xticks(range(len(words)), words)
-    ax.set_yticks(range(len(words)), words)
-    ax.set_title(f"head {h + 1}")
-    looks_at = ", ".join(f"{words[j]} {weights[h, 2, j]:.2f}" for j in range(3))
-    print(f"  head {h + 1}: 'a' looks at {looks_at}")
+n_heads = len(model.blocks[0].attn.weights[0])
+fig, axes = plt.subplots(len(model.blocks), n_heads, figsize=(4 * n_heads, 4 * len(model.blocks)), squeeze=False)
+for b, block in enumerate(model.blocks):
+    weights = block.attn.weights[0]
+    for h in range(n_heads):
+        ax = axes[b][h]
+        ax.imshow(weights[h].numpy(), cmap="Purples", vmin=0, vmax=1)
+        ax.set_xticks(range(len(words)), words)
+        ax.set_yticks(range(len(words)), words)
+        ax.set_title(f"block {b + 1}, head {h + 1}")
+        looks_at = ", ".join(f"{words[j]} {weights[h, 2, j]:.2f}" for j in range(3))
+        print(f"  block {b + 1}, head {h + 1}: 'a' looks at {looks_at}")
 fig.tight_layout()
 fig.savefig("attention.png")

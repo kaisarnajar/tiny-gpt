@@ -9,6 +9,7 @@ from tokenizer import Tokenizer
 CONTEXT_LEN = 8
 D_MODEL = 64
 N_HEADS = 4
+N_LAYERS = 2
 EPOCHS = 100
 BATCH_SIZE = 64
 LR = 3e-3
@@ -32,7 +33,7 @@ def train():
     torch.manual_seed(42)
     tokenizer = Tokenizer.from_file("data/corpus.txt")
     x_train, y_train, x_val, y_val = load_data(tokenizer)
-    model = GPT(tokenizer.vocab_size, D_MODEL, CONTEXT_LEN, N_HEADS)
+    model = GPT(tokenizer.vocab_size, D_MODEL, CONTEXT_LEN, N_HEADS, N_LAYERS)
     loss_fn = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_id)
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=0.0)
     print("parameters:", sum(p.numel() for p in model.parameters()))
@@ -61,7 +62,7 @@ def train():
 def load_model():
     checkpoint = torch.load("model.pt")
     tokenizer = Tokenizer(checkpoint["vocab"])
-    model = GPT(tokenizer.vocab_size, D_MODEL, CONTEXT_LEN, N_HEADS)
+    model = GPT(tokenizer.vocab_size, D_MODEL, CONTEXT_LEN, N_HEADS, N_LAYERS)
     model.load_state_dict(checkpoint["model"])
     model.eval()
     return model, tokenizer
