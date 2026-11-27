@@ -7,3 +7,5 @@ attention.png
 docs/
 node_modules/
 dist/
+data/
+*.npy

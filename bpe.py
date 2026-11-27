@@ -85,7 +85,7 @@ class BPE:
 
 if __name__ == "__main__":
     vocab_size = int(sys.argv[1]) if len(sys.argv) > 1 else 4096
-    text = open("data/stories.txt").read()
+    text = open("data/val.txt").read()
     bpe = BPE()
     bpe.train(text, vocab_size)
     bpe.save("bpe.json")
