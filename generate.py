@@ -5,11 +5,11 @@ import torch
 from train import load_model
 
 
-def generate(model, tokenizer, prompt, temperature=1.0, top_k=0, top_p=0.9):
-    ids = tokenizer.encode(prompt)
-    while len(ids) < model.context_len:
+def generate(model, bpe, prompt, temperature=1.0, top_k=0, top_p=0.9, max_new_tokens=200):
+    ids = bpe.encode(prompt)
+    for _ in range(max_new_tokens):
         with torch.no_grad():
-            logits = model(torch.tensor([ids]))[0, -1]
+            logits = model(torch.tensor([ids[-model.context_len:]]))[0, -1]
 
         if temperature == 0:
             next_id = logits.argmax().item()
@@ -26,14 +26,14 @@ def generate(model, tokenizer, prompt, temperature=1.0, top_k=0, top_p=0.9):
                 probs = probs / probs.sum()
             next_id = torch.multinomial(probs, 1).item()
 
-        ids.append(next_id)
-        if next_id == tokenizer.eos_id:
+        if next_id == bpe.eos_id:
             break
-    return tokenizer.decode(ids)
+        ids.append(next_id)
+    return bpe.decode(ids)
 
 
 if __name__ == "__main__":
-    model, tokenizer = load_model()
-    prompts = sys.argv[1:] or ["the dog", "the cow eats", "he is a", "she is a"]
+    model, bpe = load_model()
+    prompts = sys.argv[1:] or ["Once upon a time", "The little dog"]
     for prompt in prompts:
-        print(generate(model, tokenizer, prompt))
+        print(generate(model, bpe, prompt), "\n")

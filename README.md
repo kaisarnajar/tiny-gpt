@@ -1,7 +1,10 @@
 # tiny-gpt
 
-A small GPT language model written from scratch in PyTorch. It is trained on 50,000 simple sentences and
-finishes the sentence you start: `the cow eats` → `the cow eats grass .`
+A small GPT language model written from scratch in PyTorch. It is trained on 27,630 short children's stories
+(TinyStories) and continues the story you start:
+
+> **Once upon a time**, there was a little girl named Lily. She loved to play with her toys and eat yummy
+> treats. One day, she found a big, red ball in her room. She was very happy and wanted to play with it.
 
 ## Model
 
@@ -17,43 +20,54 @@ logits = lm_head(ln_f(x))
 
 | Setting | Value |
 |---|---|
-| vocabulary | 225 words |
-| context length | 8 tokens |
-| numbers per token (d_model) | 64 |
-| attention heads | 4 × 16 |
-| FFN hidden size | 256 |
-| blocks | 2 |
+| tokenizer | byte-level BPE, 4,096 tokens (including `<|endoftext|>`) |
+| context length | 128 tokens |
+| numbers per token (d_model) | 128 |
+| attention heads | 4 × 32 |
+| FFN hidden size | 512 |
+| blocks | 4 |
 
-Validation loss 0.894 (the best possible on this data is 0.892).
-
-## Parameters: 129,121
+## Parameters: 1,860,352
 
 | Layer | Shape | Parameters |
 |---|---|---|
-| Token embedding | 225 × 64 | 14,400 |
-| Position embedding | 8 × 64 | 512 |
-| **Block** (× 2) | | **49,728** each |
-| &nbsp;&nbsp;LayerNorm 1 | 64 + 64 | 128 |
-| &nbsp;&nbsp;Attention W_q, W_k, W_v, W_o | 4 × 64 × 64 | 16,384 |
-| &nbsp;&nbsp;LayerNorm 2 | 64 + 64 | 128 |
-| &nbsp;&nbsp;FFN layer 1 | 64 × 256 + 256 | 16,640 |
-| &nbsp;&nbsp;FFN layer 2 | 256 × 64 + 64 | 16,448 |
-| 2 blocks | 2 × 49,728 | 99,456 |
-| Final LayerNorm | 64 + 64 | 128 |
-| Output layer | 64 × 225 + 225 | 14,625 |
-| **Total** | | **129,121** |
+| Token embedding | 4,096 × 128 | 524,288 |
+| Position embedding | 128 × 128 | 16,384 |
+| **Block** (× 4) | | **197,760** each |
+| &nbsp;&nbsp;LayerNorm 1 | 128 + 128 | 256 |
+| &nbsp;&nbsp;Attention W_q, W_k, W_v, W_o | 4 × 128 × 128 | 65,536 |
+| &nbsp;&nbsp;LayerNorm 2 | 128 + 128 | 256 |
+| &nbsp;&nbsp;FFN layer 1 | 128 × 512 + 512 | 66,048 |
+| &nbsp;&nbsp;FFN layer 2 | 512 × 128 + 128 | 65,664 |
+| 4 blocks | 4 × 197,760 | 791,040 |
+| Final LayerNorm | 128 + 128 | 256 |
+| Output layer | 128 × 4,096 + 4,096 | 528,384 |
+| **Total** | | **1,860,352** |
+
+More than half of the parameters (57%) are in the token embedding and the output layer, because every one of
+the 4,096 tokens needs its own row in both.
+
+## Training
+
+| | |
+|---|---|
+| data | `data/stories.txt`: 22.5 MB, 27,630 stories → 5.7 million tokens (90% train, 10% validation) |
+| batches | 32 random windows of 128 tokens; the target is the same window shifted by one token |
+| steps | 5,000 (about 20 million tokens, ~4 passes over the data) |
+| optimizer | AdamW, learning rate 0.001 |
+| time | about 2 minutes on the Mac's GPU (MPS) |
+| loss | 8.3 at the start (random guess among 4,096 tokens) → 2.38 validation loss |
 
 ## Files
 
 | File | What it does |
 |---|---|
-| `data.py` | writes `data/corpus.txt`: 50,000 simple sentences about animals and people |
-| `tokenizer.py` | turns words into numbers and back (`<pad>` = 0, `<eos>` = 1) |
-| `bpe.py` | a byte-level BPE tokenizer for code, trained into `bpe.json` (2,048 tokens) |
+| `data.py` | downloads TinyStories into `data/stories.txt` |
+| `bpe.py` | byte-level BPE tokenizer; `python bpe.py` trains `bpe.json` on the stories |
 | `model.py` | the model: `Attention`, `FFN`, `Block` and `GPT` |
-| `train.py` | trains the model for 100 epochs and saves `model.pt` |
-| `generate.py` | finishes a sentence, with temperature, top-k and top-p sampling |
-| `explore.py` | prints the parameters and next-word guesses, saves `attention.png` |
+| `train.py` | trains the model and saves `model.pt` |
+| `generate.py` | continues a story, with temperature, top-k and top-p sampling |
+| `explore.py` | prints the parameters and next-token guesses, saves `attention.png` |
 | `server.py` | web server for the chat page |
 | `frontend/` | the chat page (React) |
 
@@ -62,9 +76,11 @@ Validation loss 0.894 (the best possible on this data is 0.892).
 ```bash
 pip install -r requirements.txt
 python train.py
-python generate.py "he is a"
+python generate.py "Once upon a time"
 python explore.py
 ```
+
+`data/stories.txt` and `bpe.json` are in the repository, so `data.py` and `bpe.py` are only needed to rebuild them.
 
 Chat in the browser:
 

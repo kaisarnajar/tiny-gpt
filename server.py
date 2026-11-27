@@ -1,5 +1,3 @@
-import re
-
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -9,7 +7,7 @@ from pydantic import BaseModel
 from generate import generate
 from train import load_model
 
-model, tokenizer = load_model()
+model, bpe = load_model()
 app = FastAPI()
 
 
@@ -29,16 +27,12 @@ def info():
 
 @app.post("/api/complete")
 def complete(req: Request):
-    words = re.findall(r"[a-z]+|[^\sa-z]", req.prompt.lower())
-    unknown = [w for w in words if w not in tokenizer.stoi]
-    if not words:
-        return JSONResponse({"error": "Type the start of a sentence."}, status_code=400)
-    if unknown:
-        return JSONResponse({"error": "Unknown word: " + ", ".join(unknown)}, status_code=400)
-    if len(words) >= model.context_len:
-        return JSONResponse({"error": f"Use at most {model.context_len - 1} words."}, status_code=400)
-    sentence = generate(model, tokenizer, " ".join(words), req.temperature, req.top_k, req.top_p)
-    return {"sentence": sentence}
+    prompt = req.prompt.strip()
+    if not prompt:
+        return JSONResponse({"error": "Type the start of a story."}, status_code=400)
+    if len(prompt) > 500:
+        return JSONResponse({"error": "Use at most 500 characters."}, status_code=400)
+    return {"text": generate(model, bpe, prompt, req.temperature, req.top_k, req.top_p)}
 
 
 app.mount("/", StaticFiles(directory="frontend/dist", html=True))

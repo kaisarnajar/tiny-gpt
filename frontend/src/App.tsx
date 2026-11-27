@@ -39,7 +39,7 @@ export default function App() {
         body: JSON.stringify({ prompt, temperature, top_k: topK, top_p: topP }),
       })
       const data = await res.json()
-      const reply = data.error ? { text: data.error, error: true } : { text: data.sentence }
+      const reply = data.error ? { text: data.error, error: true } : { text: data.text }
       setMessages((m) => [...m, { role: 'assistant', ...reply }])
     } catch {
       setMessages((m) => [...m, { role: 'assistant', text: 'Could not reach the server.', error: true }])
@@ -90,8 +90,8 @@ export default function App() {
       <main className="chat-messages">
         {messages.length === 0 && (
           <div className="chat-empty">
-            <p>Type the start of a sentence and the model finishes it.</p>
-            <p className="chat-empty-example">Try "The Dog" or "my mother"</p>
+            <p>Type the start of a story and the model continues it.</p>
+            <p className="chat-empty-example">Try "Once upon a time" or "Lily found a"</p>
           </div>
         )}
         {messages.map((m, i) => (

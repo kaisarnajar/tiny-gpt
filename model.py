@@ -65,7 +65,7 @@ class GPT(nn.Module):
 
     def forward(self, idx):
         T = idx.shape[1]
-        x = self.token_emb(idx) + self.pos_emb(torch.arange(T))
+        x = self.token_emb(idx) + self.pos_emb(torch.arange(T, device=idx.device))
         for block in self.blocks:
             x = block(x)
         return self.lm_head(self.ln_f(x))

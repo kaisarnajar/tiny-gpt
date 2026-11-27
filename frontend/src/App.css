@@ -98,6 +98,7 @@
 
 .message {
   max-width: 80%;
+  white-space: pre-wrap;
   padding: 10px 14px;
   border-radius: 14px;
   white-space: pre-wrap;
