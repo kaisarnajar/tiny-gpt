@@ -2,15 +2,16 @@
 
 Building a GPT step by step.
 
-## The model now (Step 4c)
+## The model now (Step 4d)
 
 ```
 x      = token_emb + pos_emb        (B, T, 64)
 x      = x + attention(ln1(x))      LayerNorm, then 4 heads × 16, causal mask, residual
+x      = x + ffn(ln2(x))            LayerNorm, then FFN 64 → 256 → GELU → 64, residual
 logits = lm_head(ln_f(x))           final LayerNorm, then (B, T, 225)
 ```
 
-46,177 parameters · val loss 0.899 (best possible on this data: 0.89)
+79,393 parameters · val loss 0.895 (best possible on this data: 0.89)
 
 ## Files
 
@@ -18,7 +19,7 @@ logits = lm_head(ln_f(x))           final LayerNorm, then (B, T, 225)
 |---|---|
 | `data.py` | makes `data/corpus.txt`: 50,000 simple sentences ("the cow eats grass .") |
 | `tokenizer.py` | word ↔ number, `<pad>` = 0, `<eos>` = 1 |
-| `model.py` | `Attention` and `GPT` (with LayerNorm) |
+| `model.py` | `Attention`, `FFN` and `GPT` |
 | `train.py` | trains for 100 epochs and saves `model.pt` |
 | `generate.py` | finishes a sentence (temperature, top-k, top-p) |
 | `explore.py` | parameters, next-word guesses, similar words, `attention.png` |
@@ -50,5 +51,5 @@ python server.py                 # http://localhost:8000
 | 4a | multi-head attention (4 × 16) | 0.906 |
 | 4b | residual connection: `x = x + attention(x)` | 0.901 |
 | 4c | LayerNorm before attention and before the output layer | 0.899 |
-| 4d | feed-forward network | next |
-| 4e | stacked blocks | |
+| 4d | feed-forward network: 64 → 256 → GELU → 64 | 0.895 |
+| 4e | stacked blocks | next |
