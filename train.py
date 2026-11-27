@@ -40,7 +40,7 @@ def train():
 
     for epoch in range(1, EPOCHS + 1):
         perm = torch.randperm(len(x_train))
-        total = 0
+        losses = []
         for i in range(0, len(x_train), BATCH_SIZE):
             idx = perm[i:i + BATCH_SIZE]
             logits = model(x_train[idx])
@@ -48,13 +48,12 @@ def train():
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            total += loss.item()
+            losses.append(loss.item())
 
         if epoch % 10 == 0:
             with torch.no_grad():
                 val_loss = loss_fn(model(x_val).flatten(0, 1), y_val.flatten()).item()
-            train_loss = total / (len(x_train) / BATCH_SIZE)
-            print(f"epoch {epoch}  train loss {train_loss:.4f}  val loss {val_loss:.4f}")
+            print(f"epoch {epoch}  train loss {sum(losses) / len(losses):.4f}  val loss {val_loss:.4f}")
 
     torch.save({"model": model.state_dict(), "vocab": tokenizer.itos}, "model.pt")
 

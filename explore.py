@@ -3,7 +3,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import torch
-import torch.nn.functional as F
 
 from train import load_model
 
@@ -19,19 +18,12 @@ def next_words(prompt, k=4):
 
 print("Parameters")
 for name, p in model.named_parameters():
-    print(f"  {name:20} {str(tuple(p.shape)):10} {p.numel():>6,}")
-print(f"  {'total':31} {sum(p.numel() for p in model.parameters()):>6,}")
+    print(f"  {name:26} {str(tuple(p.shape)):10} {p.numel():>7,}")
+print(f"  {'total':37} {sum(p.numel() for p in model.parameters()):>7,}")
 
 print("\nNext word")
 for prompt in ["he is a", "she is a", "the cow lives on the", "the monkey lives in the"]:
     print(f"  {prompt:24} -> {next_words(prompt)}")
-
-print("\nSimilar words")
-emb = F.normalize(model.token_emb.weight.detach(), dim=1)
-for word in ["cat", "lion", "grass", "mother", "barks"]:
-    similarity = emb @ emb[tokenizer.stoi[word]]
-    best = similarity.topk(6).indices[1:]
-    print(f"  {word:8} -> {', '.join(tokenizer.itos[i] for i in best)}")
 
 print("\nAttention for 'he is a doctor .' (saved to attention.png)")
 words = "he is a doctor .".split()

@@ -21,10 +21,6 @@
   font-weight: 600;
 }
 
-.chat-header-note {
-  font-size: 14px;
-  color: var(--muted);
-}
 
 .params-toggle {
   margin-left: auto;
