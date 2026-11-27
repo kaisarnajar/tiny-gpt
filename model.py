@@ -23,8 +23,8 @@ class Attention(nn.Module):
         v = self.W_v(x).view(B, T, self.n_heads, self.head_size).transpose(1, 2)
         scores = q @ k.transpose(-2, -1) / math.sqrt(self.head_size)
         scores = scores.masked_fill(~self.mask[:T, :T], float("-inf"))
-        self.weights = torch.softmax(scores, dim=-1)
-        out = self.weights @ v
+        weights = torch.softmax(scores, dim=-1)
+        out = weights @ v
         out = out.transpose(1, 2).reshape(B, T, d)
         return self.W_o(out)
 

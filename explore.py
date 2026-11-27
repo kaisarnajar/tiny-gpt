@@ -1,53 +1,63 @@
-import matplotlib
+import math
+import sys
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import torch
+import torch.nn as nn
 
-from train import load_model
+import train
+from generate import generate
 
-model, bpe = load_model()
+PROMPTS = ["Once upon a time", "Lily found a small box under her bed.", "Tom was sad because"]
 
 
-def next_tokens(prompt, k=5):
+def settings(model, bpe):
+    n_heads = model.blocks[0].attn.n_heads
+    d_model = model.token_emb.weight.shape[1]
+    print("Model")
+    print(f"  parameters      {sum(p.numel() for p in model.parameters()):,}")
+    print(f"  vocabulary      {bpe.vocab_size:,} tokens")
+    print(f"  context length  {model.context_len} tokens")
+    print(f"  d_model         {d_model}")
+    print(f"  heads           {n_heads} × {d_model // n_heads}")
+    print(f"  blocks          {len(model.blocks)}")
+
+
+def validation(model, bpe, batches=100):
+    torch.manual_seed(0)
+    data = train.tokenize(bpe, "val")
+    total = 0
     with torch.no_grad():
-        logits = model(torch.tensor([bpe.encode(prompt)]))[0, -1]
+        for _ in range(batches):
+            x, y = train.get_batch(data)
+            total += nn.functional.cross_entropy(model(x).flatten(0, 1), y.flatten()).item()
+    loss = total / batches
+    print("\nValidation (same 100 batches every time, so models can be compared)")
+    print(f"  loss        {loss:.4f}")
+    print(f"  perplexity  {math.exp(loss):.1f}   (the model is as unsure as choosing among this many tokens)")
+
+
+def stories(model, bpe):
+    print("\nStories (temperature 0: the same text every time)")
+    for prompt in PROMPTS:
+        print(f"\n  {generate(model, bpe, prompt, temperature=0, max_new_tokens=80)}")
+
+
+def next_tokens(model, bpe, text, k=8):
+    with torch.no_grad():
+        logits = model(torch.tensor([bpe.encode(text)[-model.context_len:]]))[0, -1]
     probs, ids = torch.softmax(logits, dim=-1).topk(k)
-    return ", ".join(f"{bpe.decode([i])!r} {p:.2f}" for p, i in zip(probs.tolist(), ids.tolist()))
+    print(f"\nNext token after {text!r}")
+    for p, i in zip(probs.tolist(), ids.tolist()):
+        print(f"  {bpe.decode([i])!r:14} {p:.3f}  {'█' * round(p * 40)}")
 
 
-print("Parameters")
-parts = {}
-for name, p in model.named_parameters():
-    part = ".".join(name.split(".")[:2]) if name.startswith("blocks") else name.split(".")[0]
-    parts[part] = parts.get(part, 0) + p.numel()
-for part, n in parts.items():
-    print(f"  {part:12} {n:>10,}")
-print(f"  {'total':12} {sum(parts.values()):>10,}")
-
-print("\nNext token")
-for prompt in ["Once upon a time, there was a", "Lily was very", "The dog ran to the", "Tom and Sam were best"]:
-    print(f"  {prompt:32} -> {next_tokens(prompt)}")
-
-text = "Lily had a red ball. She threw the ball to her"
-ids = bpe.encode(text)
-tokens = [bpe.decode([i]) for i in ids]
-with torch.no_grad():
-    model(torch.tensor([ids]))
-n_heads = len(model.blocks[0].attn.weights[0])
-fig, axes = plt.subplots(len(model.blocks), n_heads, figsize=(3.5 * n_heads, 3.5 * len(model.blocks)), squeeze=False)
-print(f"\nAttention for {text!r} (saved to attention.png): what the last token {tokens[-1]!r} looks at most")
-for b, block in enumerate(model.blocks):
-    weights = block.attn.weights[0]
-    best = []
-    for h in range(n_heads):
-        ax = axes[b][h]
-        ax.imshow(weights[h].numpy(), cmap="Purples", vmin=0, vmax=1)
-        ax.set_xticks(range(len(tokens)), tokens, rotation=90, fontsize=6)
-        ax.set_yticks(range(len(tokens)), tokens, fontsize=6)
-        ax.set_title(f"block {b + 1}, head {h + 1}", fontsize=8)
-        j = weights[h, -1].argmax().item()
-        best.append(f"head {h + 1}: {tokens[j]!r} {weights[h, -1, j]:.2f}")
-    print(f"  block {b + 1}: " + " | ".join(best))
-fig.tight_layout()
-fig.savefig("attention.png")
+if __name__ == "__main__":
+    model, bpe = train.load_model()
+    train.DEVICE = "cpu"
+    if len(sys.argv) > 1:
+        next_tokens(model, bpe, " ".join(sys.argv[1:]))
+    else:
+        settings(model, bpe)
+        validation(model, bpe)
+        stories(model, bpe)
+        next_tokens(model, bpe, "Lily was very")

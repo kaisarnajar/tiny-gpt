@@ -69,7 +69,7 @@ saves 1.57M parameters.
 | `model.py` | the model: `Attention`, `FFN`, `Block` and `GPT` |
 | `train.py` | tokenizes the data (cached in `data/*.npy`), trains the model and saves `model.pt` |
 | `generate.py` | continues a story, with temperature, top-k and top-p sampling |
-| `explore.py` | prints the parameters and next-token guesses, saves `attention.png` |
+| `explore.py` | model report: settings, validation loss, fixed test stories and next-token guesses; with your own text it shows the next-token guesses |
 | `server.py` | web server for the chat page |
 | `frontend/` | the chat page (React) |
 
@@ -80,7 +80,8 @@ pip install -r requirements.txt
 python data.py                   # downloads data/train.txt and data/val.txt
 python train.py                  # about 45 minutes on an Apple-silicon Mac
 python generate.py "Once upon a time"
-python explore.py
+python explore.py                # model report, to compare models after training
+python explore.py "Lily was very"   # next-token guesses for your own text
 ```
 
 The data files are not in the repository; `data.py` downloads them. `bpe.json` is in the repository, so

@@ -3,7 +3,6 @@ __pycache__/
 .venv/
 .DS_Store
 .claude/
-attention.png
 docs/
 node_modules/
 dist/
