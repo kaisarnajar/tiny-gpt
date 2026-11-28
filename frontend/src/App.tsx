@@ -4,6 +4,8 @@ import './App.css'
 type Message = { role: 'user' | 'assistant'; text: string; error?: boolean }
 type Layer = { name: string; shape: string; params: number }
 
+const EXAMPLES = ['Once upon a time', 'The water cycle is', 'def is_prime(n):']
+
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -90,8 +92,14 @@ export default function App() {
       <main className="chat-messages">
         {messages.length === 0 && (
           <div className="chat-empty">
-            <p>Type the start of a story and the model continues it.</p>
-            <p className="chat-empty-example">Try "Once upon a time" or "Lily found a"</p>
+            <p>Type the start of a story, an article or some Python code, and the model continues it.</p>
+            <div className="chat-examples">
+              {EXAMPLES.map((example) => (
+                <button key={example} type="button" onClick={() => setInput(example)}>
+                  {example}
+                </button>
+              ))}
+            </div>
           </div>
         )}
         {messages.map((m, i) => (

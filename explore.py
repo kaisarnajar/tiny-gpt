@@ -2,12 +2,11 @@ import math
 import sys
 
 import torch
-import torch.nn as nn
 
 import train
 from generate import generate
 
-PROMPTS = ["Once upon a time", "Lily found a small box under her bed.", "Tom was sad because"]
+PROMPTS = ["Once upon a time", "The water cycle is", "def is_prime(n):"]
 
 
 def settings(model, bpe):
@@ -22,24 +21,29 @@ def settings(model, bpe):
     print(f"  blocks          {len(model.blocks)}")
 
 
-def validation(model, bpe, batches=100):
-    torch.manual_seed(0)
-    data = train.tokenize(bpe, "val")
-    total = 0
-    with torch.no_grad():
+@torch.no_grad()
+def validation(model, batches=50):
+    model.to(train.DEVICE)
+    print("\nValidation (the same batches every time, so models can be compared)")
+    print(f"  {'source':8} {'loss':>6} {'perplexity':>11} {'top-1 correct':>14}")
+    for name in train.SOURCES:
+        torch.manual_seed(0)
+        data = train.tokenize(f"val_{name}")
+        loss, correct = 0, 0
         for _ in range(batches):
             x, y = train.get_batch(data)
-            total += nn.functional.cross_entropy(model(x).flatten(0, 1), y.flatten()).item()
-    loss = total / batches
-    print("\nValidation (same 100 batches every time, so models can be compared)")
-    print(f"  loss        {loss:.4f}")
-    print(f"  perplexity  {math.exp(loss):.1f}   (the model is as unsure as choosing among this many tokens)")
+            logits = model(x).float()
+            loss += torch.nn.functional.cross_entropy(logits.flatten(0, 1), y.flatten()).item()
+            correct += (logits.argmax(-1) == y).float().mean().item()
+        loss, correct = loss / batches, correct / batches
+        print(f"  {name:8} {loss:6.3f} {math.exp(loss):11.1f} {correct:13.1%}")
+    model.to("cpu")
 
 
-def stories(model, bpe):
-    print("\nStories (temperature 0: the same text every time)")
+def samples(model, bpe):
+    print("\nSamples (temperature 0: the same text every time)")
     for prompt in PROMPTS:
-        print(f"\n  {generate(model, bpe, prompt, temperature=0, max_new_tokens=80)}")
+        print(f"\n{generate(model, bpe, prompt, temperature=0, max_new_tokens=80)}")
 
 
 def next_tokens(model, bpe, text, k=8):
@@ -53,11 +57,11 @@ def next_tokens(model, bpe, text, k=8):
 
 if __name__ == "__main__":
     model, bpe = train.load_model()
-    train.DEVICE = "cpu"
     if len(sys.argv) > 1:
         next_tokens(model, bpe, " ".join(sys.argv[1:]))
     else:
         settings(model, bpe)
-        validation(model, bpe)
-        stories(model, bpe)
+        validation(model)
+        samples(model, bpe)
         next_tokens(model, bpe, "Lily was very")
+        next_tokens(model, bpe, "for i in")

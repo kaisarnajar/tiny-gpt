@@ -1,6 +1,7 @@
 import math
 import os
 import time
+from multiprocessing import Pool
 
 import numpy as np
 import torch
@@ -9,29 +10,40 @@ import torch.nn as nn
 from bpe import BPE, EOS
 from model import GPT
 
-CONTEXT_LEN = 256
-D_MODEL = 384
-N_HEADS = 6
-N_LAYERS = 6
-BATCH_SIZE = 32
-STEPS = 10000
-LR = 1e-3
-WARMUP = 200
-EVAL_EVERY = 500
+CONTEXT_LEN = 512
+D_MODEL = 512
+N_HEADS = 8
+N_LAYERS = 8
+BATCH_SIZE = 16
+STEPS = 60000
+LR = 6e-4
+WARMUP = 1000
+EVAL_EVERY = 1000
+SOURCES = ["stories", "web", "code"]
 DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
 
 
-def tokenize(bpe, name):
+def forward_loss(model, loss_fn, x, y):
+    with torch.autocast(device_type=DEVICE, dtype=torch.bfloat16, enabled=DEVICE == "mps"):
+        return loss_fn(model(x).flatten(0, 1).float(), y.flatten())
+
+
+def encode_piece(text):
+    return np.array(BPE.load("bpe.json").encode(text), dtype=np.int16)
+
+
+def tokenize(name):
     path = f"data/{name}.npy"
     if not os.path.exists(path):
         text = open(f"data/{name}.txt").read()
-        parts, start = [], 0
+        pieces, start = [], 0
         while start < len(text):
             end = text.find(EOS, start + 10_000_000)
             end = len(text) if end == -1 else end
-            parts.append(np.array(bpe.encode(text[start:end]), dtype=np.int16))
+            pieces.append(text[start:end])
             start = end
-        np.save(path, np.concatenate(parts))
+        with Pool() as pool:
+            np.save(path, np.concatenate(pool.map(encode_piece, pieces)))
     return torch.from_numpy(np.load(path))
 
 
@@ -50,32 +62,43 @@ def learning_rate(step):
 
 
 @torch.no_grad()
-def val_loss(model, data, loss_fn, batches=40):
+def val_losses(model, val, loss_fn, batches=20):
     model.eval()
-    total = 0
-    for _ in range(batches):
-        x, y = get_batch(data)
-        total += loss_fn(model(x).flatten(0, 1), y.flatten()).item()
+    losses = {}
+    for name, data in val.items():
+        total = 0
+        for _ in range(batches):
+            x, y = get_batch(data)
+            total += forward_loss(model, loss_fn, x, y).item()
+        losses[name] = total / batches
     model.train()
-    return total / batches
+    return losses
 
 
 def train():
     torch.manual_seed(42)
     bpe = BPE.load("bpe.json")
-    train_data, val_data = tokenize(bpe, "train"), tokenize(bpe, "val")
+    train_data = tokenize("train")
+    val = {name: tokenize(f"val_{name}") for name in SOURCES}
     model = GPT(bpe.vocab_size, D_MODEL, CONTEXT_LEN, N_HEADS, N_LAYERS).to(DEVICE)
     loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=0.0)
+    first_step, best = 1, float("inf")
+    if os.path.exists("checkpoint.pt"):
+        checkpoint = torch.load("checkpoint.pt", map_location=DEVICE)
+        model.load_state_dict(checkpoint["model"])
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        first_step, best = checkpoint["step"] + 1, checkpoint["best"]
+        print(f"resuming from step {checkpoint['step']}")
     print(f"parameters: {sum(p.numel() for p in model.parameters()):,}")
-    print(f"tokens: {len(train_data):,} train, {len(val_data):,} val, device: {DEVICE}")
+    print(f"tokens: {len(train_data):,} train, device: {DEVICE}")
 
-    best, losses, start = float("inf"), [], time.time()
-    for step in range(1, STEPS + 1):
+    losses, start = [], time.time()
+    for step in range(first_step, STEPS + 1):
         for group in optimizer.param_groups:
             group["lr"] = learning_rate(step)
         x, y = get_batch(train_data)
-        loss = loss_fn(model(x).flatten(0, 1), y.flatten())
+        loss = forward_loss(model, loss_fn, x, y)
         optimizer.zero_grad()
         loss.backward()
         nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -83,13 +106,17 @@ def train():
         losses.append(loss.item())
 
         if step % EVAL_EVERY == 0:
-            val = val_loss(model, val_data, loss_fn)
-            if val < best:
-                best = val
+            val_loss = val_losses(model, val, loss_fn)
+            mean = sum(val_loss.values()) / len(val_loss)
+            if mean < best:
+                best = mean
                 torch.save(model.state_dict(), "model.pt")
-            minutes = (time.time() - start) / 60
-            print(f"step {step}  train loss {sum(losses) / len(losses):.4f}  val loss {val:.4f}  "
-                  f"lr {learning_rate(step):.5f}  {minutes:.1f} min", flush=True)
+            torch.save({"model": model.state_dict(), "optimizer": optimizer.state_dict(), "step": step,
+                        "best": best}, "checkpoint.pt")
+            hours = (time.time() - start) / 3600
+            per_source = "  ".join(f"{name} {v:.3f}" for name, v in val_loss.items())
+            print(f"step {step}  train {sum(losses) / len(losses):.4f}  val {mean:.4f} ({per_source})  "
+                  f"lr {learning_rate(step):.6f}  {hours:.2f} h", flush=True)
             losses = []
 
 

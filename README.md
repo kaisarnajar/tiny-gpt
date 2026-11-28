@@ -1,75 +1,85 @@
 # tiny-gpt
 
-A small GPT language model written from scratch in PyTorch. It is trained on 639,691 short children's stories
-(TinyStories) and continues the story you start:
+A small GPT language model written from scratch in PyTorch. It is trained on a mix of children's stories,
+educational web pages and Python code, and continues the text you start:
 
-> **Once upon a time**, there was a little girl named Lily. She loved to play with her toys and make them laugh.
-> One day, she found a big, red ball in the park. She wanted to play with it, but she was too small.
-> Lily asked her mom, "Can I play with the ball, please?" Her mom said, "No, but be careful. Don't go too far."
+> **Once upon a time**, there was a little girl named Lily. She loved to play with her toys and have tea parties.
+> One day, she found a big box in her room. She was very excited and wanted to see what was inside.
+
+Stories come out fluent. Web text has good grammar but made-up facts, and code has the right shape
+(indentation, `def`, `class`, `self.x = x`) but wrong logic.
 
 ## Model
 
-```
-x = token_emb + pos_emb
-
-for block in blocks:
-    x = x + attention(ln1(x))
-    x = x + ffn(ln2(x))
-
-logits = lm_head(ln_f(x))           lm_head shares its weights with token_emb
-```
-
 | Setting | Value |
 |---|---|
-| tokenizer | byte-level BPE, 4,096 tokens (including `<|endoftext|>`) |
-| context length | 256 tokens |
-| numbers per token (d_model) | 384 |
-| attention heads | 6 × 64 |
-| FFN hidden size | 1,536 |
-| blocks | 6 |
+| tokenizer | byte-level BPE, 16,384 tokens (including `<|endoftext|>`) |
+| context length | 512 tokens |
+| numbers per token (d_model) | 512 |
+| attention heads | 8 × 64 |
+| FFN hidden size | 2,048 |
+| blocks | 8 |
 
-## Parameters: 12,313,600
+## Parameters: 33,870,848
 
 | Layer | Shape | Parameters |
 |---|---|---|
-| Token embedding | 4,096 × 384 | 1,572,864 |
-| Position embedding | 256 × 384 | 98,304 |
-| **Block** (× 6) | | **1,772,928** each |
-| &nbsp;&nbsp;LayerNorm 1 | 384 + 384 | 768 |
-| &nbsp;&nbsp;Attention W_q, W_k, W_v, W_o | 4 × 384 × 384 | 589,824 |
-| &nbsp;&nbsp;LayerNorm 2 | 384 + 384 | 768 |
-| &nbsp;&nbsp;FFN layer 1 | 384 × 1,536 + 1,536 | 591,360 |
-| &nbsp;&nbsp;FFN layer 2 | 1,536 × 384 + 384 | 590,208 |
-| 6 blocks | 6 × 1,772,928 | 10,637,568 |
-| Final LayerNorm | 384 + 384 | 768 |
-| Output layer | weights shared with the token embedding, + 4,096 biases | 4,096 |
-| **Total** | | **12,313,600** |
+| Token embedding | 16,384 × 512 | 8,388,608 |
+| Position embedding | 512 × 512 | 262,144 |
+| **Block** (× 8) | | **3,150,336** each |
+| &nbsp;&nbsp;LayerNorm 1 | 512 + 512 | 1,024 |
+| &nbsp;&nbsp;Attention W_q, W_k, W_v, W_o | 4 × 512 × 512 | 1,048,576 |
+| &nbsp;&nbsp;LayerNorm 2 | 512 + 512 | 1,024 |
+| &nbsp;&nbsp;FFN layer 1 | 512 × 2,048 + 2,048 | 1,050,624 |
+| &nbsp;&nbsp;FFN layer 2 | 2,048 × 512 + 512 | 1,049,088 |
+| 8 blocks | 8 × 3,150,336 | 25,202,688 |
+| Final LayerNorm | 512 + 512 | 1,024 |
+| Output layer | weights shared with the token embedding, + 16,384 biases | 16,384 |
+| **Total** | | **33,870,848** |
 
-86% of the parameters are in the 6 blocks. The output layer reuses the token embedding (weight tying), which
-saves 1.57M parameters.
+74% of the parameters are in the 8 blocks and 25% in the token embedding. The output layer reuses the token
+embedding (weight tying), which saves 8.4M parameters. Stored as 32-bit floats, `model.pt` is 138 MB.
+
+## Data
+
+| Source | Characters | Documents |
+|---|---|---|
+| stories: [TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories) | 300M | ~373,000 stories |
+| web: [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) (one file) | 700M | ~147,000 pages |
+| code: [codeparrot-clean](https://huggingface.co/datasets/codeparrot/codeparrot-clean) (one file) | 500M | ~56,000 Python files |
+
+`data.py` shuffles each source, keeps 1% of it for validation (`data/val_stories.txt`, `data/val_web.txt`,
+`data/val_code.txt`) and mixes the rest into `data/train.txt`: 570,752 documents, 1.5 GB, 382.6M tokens.
 
 ## Training
 
 | | |
 |---|---|
-| data | `data/train.txt`: first 500 MB of TinyStories, 639,691 stories, 132.5M tokens · `data/val.txt`: 27,630 stories, 5.7M tokens |
-| batches | 32 random windows of 256 tokens; the target is the same window shifted by one token |
-| steps | 10,000 (82M tokens) |
-| optimizer | AdamW; learning rate warms up to 0.001 in 200 steps, then decays to 0.0001 (cosine); gradients clipped at 1.0 |
-| checkpoint | `model.pt` is saved whenever the validation loss is the best so far (checked every 500 steps) |
-| time | 43 minutes on the Mac's GPU (MPS) |
-| loss | 8.3 at the start (random guess among 4,096 tokens) → **1.90** validation loss |
+| batches | 16 random windows of 512 tokens; the target is the same window shifted by one token |
+| steps | 60,000 (492M tokens, about 1.3 passes over the data) |
+| optimizer | AdamW; learning rate warms up to 0.0006 in 1,000 steps, then decays to 0.00006 (cosine); gradients clipped at 1.0 |
+| speed | bfloat16 on the Mac's GPU (MPS), 0.4 s per step, about 19,500 tokens per second |
+| saving | every 1,000 steps: `checkpoint.pt` (model, optimizer and step, so training can resume) and `model.pt` when the mean validation loss is the best so far |
+| time | 7.0 hours |
+
+| Validation | Loss | Perplexity | Next token guessed right |
+|---|---|---|---|
+| stories | 1.46 | 4.3 | 62.5% |
+| web | 3.62 | 37.2 | 35.2% |
+| code | 1.85 | 6.3 | 62.9% |
+
+The loss starts at 9.8, close to a random guess among 16,384 tokens (ln 16,384 = 9.7).
 
 ## Files
 
 | File | What it does |
 |---|---|
-| `data.py` | downloads TinyStories: `data/train.txt` (500 MB) and `data/val.txt` (22 MB) |
-| `bpe.py` | byte-level BPE tokenizer; `python bpe.py` trains `bpe.json` on `data/val.txt` |
+| `data.py` | downloads the three sources and writes `data/train.txt` and the three validation files |
+| `bpe.py` | byte-level BPE tokenizer; `python bpe.py` trains `bpe.json` on the first 50M characters of `data/train.txt` |
 | `model.py` | the model: `Attention`, `FFN`, `Block` and `GPT` |
 | `train.py` | tokenizes the data (cached in `data/*.npy`), trains the model and saves `model.pt` |
-| `generate.py` | continues a story, with temperature, top-k and top-p sampling |
-| `explore.py` | model report: settings, validation loss, fixed test stories and next-token guesses; with your own text it shows the next-token guesses |
+| `generate.py` | continues a text, with temperature, top-k and top-p sampling |
+| `explore.py` | model report: settings, validation per source, fixed samples and next-token guesses; with your own text it shows the next-token guesses |
 | `server.py` | web server for the chat page |
 | `frontend/` | the chat page (React) |
 
@@ -77,11 +87,11 @@ saves 1.57M parameters.
 
 ```bash
 pip install -r requirements.txt
-python data.py                   # downloads data/train.txt and data/val.txt
-python train.py                  # about 45 minutes on an Apple-silicon Mac
-python generate.py "Once upon a time"
-python explore.py                # model report, to compare models after training
-python explore.py "Lily was very"   # next-token guesses for your own text
+python data.py                       # downloads about 2.7 GB and writes the data files
+python train.py                      # about 7 hours on an Apple-silicon Mac; resumes from checkpoint.pt
+python generate.py "def is_prime(n):"
+python explore.py                    # model report, to compare models after training
+python explore.py "Lily was very"    # next-token guesses for your own text
 ```
 
 The data files are not in the repository; `data.py` downloads them. `bpe.json` is in the repository, so

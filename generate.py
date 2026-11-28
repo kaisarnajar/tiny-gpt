@@ -5,7 +5,7 @@ import torch
 from train import load_model
 
 
-def generate(model, bpe, prompt, temperature=1.0, top_k=0, top_p=0.9, max_new_tokens=200):
+def generate(model, bpe, prompt, temperature=1.0, top_k=0, top_p=0.9, max_new_tokens=300):
     ids = bpe.encode(prompt)
     for _ in range(max_new_tokens):
         with torch.no_grad():
@@ -34,6 +34,6 @@ def generate(model, bpe, prompt, temperature=1.0, top_k=0, top_p=0.9, max_new_to
 
 if __name__ == "__main__":
     model, bpe = load_model()
-    prompts = sys.argv[1:] or ["Once upon a time", "The little dog"]
+    prompts = sys.argv[1:] or ["Once upon a time", "The water cycle is", "def is_prime(n):"]
     for prompt in prompts:
         print(generate(model, bpe, prompt), "\n")
