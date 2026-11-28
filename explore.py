@@ -1,5 +1,4 @@
 import math
-import sys
 
 import torch
 
@@ -57,11 +56,8 @@ def next_tokens(model, bpe, text, k=8):
 
 if __name__ == "__main__":
     model, bpe = train.load_model()
-    if len(sys.argv) > 1:
-        next_tokens(model, bpe, " ".join(sys.argv[1:]))
-    else:
-        settings(model, bpe)
-        validation(model)
-        samples(model, bpe)
-        next_tokens(model, bpe, "Lily was very")
-        next_tokens(model, bpe, "for i in")
+    settings(model, bpe)
+    validation(model)
+    samples(model, bpe)
+    next_tokens(model, bpe, "Lily was very")
+    next_tokens(model, bpe, "for i in")

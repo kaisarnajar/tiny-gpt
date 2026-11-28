@@ -151,7 +151,7 @@ the two tables, or between rows of the second table that use a different tokeniz
 | `model.py` | the model: `Attention`, `FFN`, `Block` and `GPT` |
 | `train.py` | tokenizes the data (cached in `data/*.npy`), trains the model and saves `model.pt` |
 | `generate.py` | continues a text, with temperature, top-k and top-p sampling |
-| `explore.py` | model report: settings, validation per source, fixed samples and next-token guesses; with your own text it shows the next-token guesses |
+| `explore.py` | model report: settings, validation per source, fixed samples and next-token guesses |
 | `server.py` | web server for the chat page |
 | `frontend/` | the chat page (React) |
 
@@ -163,7 +163,6 @@ python data.py                       # downloads about 2.7 GB and writes the dat
 python train.py                      # about 7 hours on an Apple-silicon Mac; resumes from checkpoint.pt
 python generate.py "def is_prime(n):"
 python explore.py                    # model report, to compare models after training
-python explore.py "Lily was very"    # next-token guesses for your own text
 ```
 
 The data files are not in the repository; `data.py` downloads them. `bpe.json` is in the repository, so
