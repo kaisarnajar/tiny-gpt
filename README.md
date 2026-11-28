@@ -109,28 +109,34 @@ The model was built one piece at a time, checking after each piece that the vali
 **Building the Transformer** on 50,000 made-up sentences ("he is a doctor", "the cow lives on the farm"),
 with a vocabulary of 225 words:
 
-| # | What was added | Parameters | Val loss |
-|---|---|---|---|
-| 1 | A dummy model: one weight and one bias, trained with AdamW, to learn the training loop | 2 | – |
-| 2 | Token and position embeddings, softmax and cross-entropy loss | 29,537 | 1.27 |
-| 3 | Masked self-attention (one head): each word can look at the earlier words | 45,921 | 0.90 |
-| 4 | Multi-head attention (4 heads × 16) | 45,921 | 0.906 |
-| 5 | Residual connection: `x = x + attention(x)` | 45,921 | 0.901 |
-| 6 | LayerNorm before attention and before the output layer | 46,177 | 0.899 |
-| 7 | Feed-forward network (64 → 256 → GELU → 64) | 79,393 | 0.895 |
-| 8 | Two Transformer blocks stacked: the same structure as GPT-2 | 129,121 | 0.894 |
-| 9 | Byte-level BPE tokenizer written by hand, so the model can read any text | – | – |
+| # | What was added | Parameters | Train loss | Val loss |
+|---|---|---|---|---|
+| 1 | A dummy model: one weight and one bias, trained with AdamW, to learn the training loop | 2 | – | – |
+| 2 | Token and position embeddings, softmax and cross-entropy loss | 29,537 | 1.273 | 1.270 |
+| 3 | Masked self-attention (one head): each word can look at the earlier words | 45,921 | 0.907 | 0.904 |
+| 4 | Multi-head attention (4 heads × 16) | 45,921 | 0.908 | 0.906 |
+| 5 | Residual connection: `x = x + attention(x)` | 45,921 | 0.905 | 0.901 |
+| 6 | LayerNorm before attention and before the output layer | 46,177 | 0.902 | 0.899 |
+| 7 | Feed-forward network (64 → 256 → GELU → 64) | 79,393 | 0.900 | 0.895 |
+| 8 | Two Transformer blocks stacked: the same structure as GPT-2 | 129,121 | 0.900 | 0.894 |
+| 9 | Byte-level BPE tokenizer written by hand, so the model can read any text | – | – | – |
 
 Attention made the biggest difference. Before it, "he is a" and "she is a" got the same predictions,
 because the model saw only the current word.
 
 **Scaling up** on real text, with the same code:
 
-| # | Model | Data | Parameters | Training | Val loss |
-|---|---|---|---|---|---|
-| 10 | 4 blocks, d_model 128, 4,096-token BPE | 22.5 MB of TinyStories | 1.86M | 2 minutes | 2.38 |
-| 11 | 6 blocks, d_model 384 | 500 MB of TinyStories | 12.3M | 43 minutes | 1.90 |
-| 12 | 8 blocks, d_model 512, 16,384-token BPE | 1.5 GB of stories, web text and Python code | 33.9M | 7 hours | 1.46 on stories (2.30 on average) |
+| # | Model | Data | Parameters | Training | Train loss | Val loss |
+|---|---|---|---|---|---|---|
+| 10 | 4 blocks, d_model 128, 4,096-token BPE | 22.5 MB of TinyStories | 1.86M | 2 minutes | 2.32 | 2.38 |
+| 11 | 6 blocks, d_model 384 | 500 MB of TinyStories | 12.3M | 43 minutes | 1.91 | 1.90 |
+| 12 | 8 blocks, d_model 512, 16,384-token BPE | 1.5 GB of stories, web text and Python code | 33.9M | 7 hours | 2.52 | 2.30 (stories 1.46, web 3.64, code 1.81) |
+
+The train loss is the average over the last part of training, while the model was still improving, so it is a
+little above the val loss of the final model. Train and val staying close means the model is not memorizing the
+training data. Row 10 is the exception: with only 22.5 MB of stories the train loss fell below the val loss,
+the first sign of memorizing, which is why the next run used 500 MB. In the last row both are averages over the
+mixed data.
 
 Along the way the project also got a chat page, temperature, top-k and top-p sampling, and a model report
 (`explore.py`). Losses can be compared within the first table (same data and vocabulary), but not between
