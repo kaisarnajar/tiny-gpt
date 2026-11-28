@@ -11,6 +11,38 @@ Stories come out fluent. Web text has good grammar but made-up facts, and code h
 
 ## Model
 
+The text flows from top to bottom. T is the number of tokens in the input (at most 512); the shape on each
+arrow is the data passed between layers, and each box shows its learned parameters.
+
+```mermaid
+flowchart TB
+    A["Text<br/>'Once upon a time'"] --> B["BPE tokenizer<br/>16,384-token vocabulary"]
+    B -->|"T token ids"| C["Token embedding<br/>16,384 × 512<br/>8,388,608 parameters"]
+    B -->|"positions 0 … T-1"| D["Position embedding<br/>512 × 512<br/>262,144 parameters"]
+    C -->|"T × 512"| E(("+"))
+    D -->|"T × 512"| E
+    E -->|"T × 512"| F
+
+    subgraph F ["Block × 8 (3,150,336 parameters each, 25,202,688 in total)"]
+        direction TB
+        X["x<br/>T × 512"] --> L1["LayerNorm 1<br/>1,024 parameters"] --> AT["Masked multi-head attention<br/>8 heads × 64<br/>W_q, W_k, W_v, W_o: 4 × 512 × 512<br/>1,048,576 parameters"]
+        AT --> R1(("+"))
+        X -.->|"residual: add x back"| R1
+        R1 --> L2["LayerNorm 2<br/>1,024 parameters"]
+        L2 --> FF["Feed-forward<br/>512 → 2,048 → GELU → 512<br/>2,099,712 parameters"]
+        FF --> R2(("+"))
+        R1 -.->|"residual"| R2
+    end
+
+    F -->|"T × 512"| G["Final LayerNorm<br/>1,024 parameters"]
+    G -->|"T × 512"| H["Output layer<br/>weights shared with the token embedding<br/>16,384 biases"]
+    H -->|"T × 16,384 scores"| I["Softmax<br/>probability of each next token"]
+    I --> J["Next token<br/>' there'"]
+```
+
+The dotted arrows are the residual connections: each block adds its input back after attention and after the
+feed-forward layer, so the block computes `x = x + attention(ln1(x))` and then `x = x + ffn(ln2(x))`.
+
 | Setting | Value |
 |---|---|
 | tokenizer | byte-level BPE, 16,384 tokens (including `<|endoftext|>`) |
