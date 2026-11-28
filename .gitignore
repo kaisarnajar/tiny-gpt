@@ -9,3 +9,4 @@ dist/
 data/
 *.npy
 *.log
+!logs/*.log

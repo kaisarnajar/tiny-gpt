@@ -92,7 +92,7 @@ embedding (weight tying), which saves 8.4M parameters. Stored as 32-bit floats, 
 | optimizer | AdamW; learning rate warms up to 0.0006 in 1,000 steps, then decays to 0.00006 (cosine); gradients clipped at 1.0 |
 | speed | bfloat16 on the Mac's GPU (MPS), 0.4 s per step, about 19,500 tokens per second |
 | saving | every 1,000 steps: `checkpoint.pt` (model, optimizer and step, so training can resume) and `model.pt` when the mean validation loss is the best so far |
-| time | 7.0 hours |
+| time | 7.0 hours; full training output in [`logs/train_34m.log`](logs/train_34m.log) |
 
 | Validation | Loss | Perplexity | Next token guessed right |
 |---|---|---|---|
