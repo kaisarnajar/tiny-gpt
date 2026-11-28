@@ -102,6 +102,40 @@ embedding (weight tying), which saves 8.4M parameters. Stored as 32-bit floats, 
 
 The loss starts at 9.8, close to a random guess among 16,384 tokens (ln 16,384 = 9.7).
 
+## How we got here
+
+The model was built one piece at a time, checking after each piece that the validation loss went down.
+
+**Building the Transformer** on 50,000 made-up sentences ("he is a doctor", "the cow lives on the farm"),
+with a vocabulary of 225 words:
+
+| # | What was added | Parameters | Val loss |
+|---|---|---|---|
+| 1 | A dummy model: one weight and one bias, trained with AdamW, to learn the training loop | 2 | – |
+| 2 | Token and position embeddings, softmax and cross-entropy loss | 29,537 | 1.27 |
+| 3 | Masked self-attention (one head): each word can look at the earlier words | 45,921 | 0.90 |
+| 4 | Multi-head attention (4 heads × 16) | 45,921 | 0.906 |
+| 5 | Residual connection: `x = x + attention(x)` | 45,921 | 0.901 |
+| 6 | LayerNorm before attention and before the output layer | 46,177 | 0.899 |
+| 7 | Feed-forward network (64 → 256 → GELU → 64) | 79,393 | 0.895 |
+| 8 | Two Transformer blocks stacked: the same structure as GPT-2 | 129,121 | 0.894 |
+| 9 | Byte-level BPE tokenizer written by hand, so the model can read any text | – | – |
+
+Attention made the biggest difference. Before it, "he is a" and "she is a" got the same predictions,
+because the model saw only the current word.
+
+**Scaling up** on real text, with the same code:
+
+| # | Model | Data | Parameters | Training | Val loss |
+|---|---|---|---|---|---|
+| 10 | 4 blocks, d_model 128, 4,096-token BPE | 22.5 MB of TinyStories | 1.86M | 2 minutes | 2.38 |
+| 11 | 6 blocks, d_model 384 | 500 MB of TinyStories | 12.3M | 43 minutes | 1.90 |
+| 12 | 8 blocks, d_model 512, 16,384-token BPE | 1.5 GB of stories, web text and Python code | 33.9M | 7 hours | 1.46 on stories (2.30 on average) |
+
+Along the way the project also got a chat page, temperature, top-k and top-p sampling, and a model report
+(`explore.py`). Losses can be compared within the first table (same data and vocabulary), but not between
+the two tables, or between rows of the second table that use a different tokenizer or data.
+
 ## Files
 
 | File | What it does |
