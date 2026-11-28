@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import './App.css'
 
 type Message = { role: 'user' | 'assistant'; text: string; error?: boolean }
@@ -9,6 +9,7 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const messagesRef = useRef<HTMLElement>(null)
   const [total, setTotal] = useState(0)
   const [temperature, setTemperature] = useState(1.0)
   const [topK, setTopK] = useState(0)
@@ -19,6 +20,10 @@ export default function App() {
       .then((res) => res.json())
       .then((data) => setTotal(data.parameters))
   }, [])
+
+  useEffect(() => {
+    messagesRef.current?.scrollTo(0, messagesRef.current.scrollHeight)
+  }, [messages])
 
   async function send(e: FormEvent) {
     e.preventDefault()
@@ -34,9 +39,23 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, temperature, top_k: topK, top_p: topP }),
       })
-      const data = await res.json()
-      const reply = data.error ? { text: data.error, error: true } : { text: data.text }
-      setMessages((m) => [...m, { role: 'assistant', ...reply }])
+      if (!res.ok) {
+        const data = await res.json()
+        setMessages((m) => [...m, { role: 'assistant', text: data.error, error: true }])
+      } else {
+        setMessages((m) => [...m, { role: 'assistant', text: prompt }])
+        const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader()
+        let buffer = ''
+        while (true) {
+          const { value, done } = await reader.read()
+          if (done) break
+          buffer += value
+          const events = buffer.split('\n\n')
+          buffer = events.pop()!
+          const text = events.map((event) => JSON.parse(event.slice('data: '.length)).text).join('')
+          setMessages((m) => [...m.slice(0, -1), { role: 'assistant', text: m[m.length - 1].text + text }])
+        }
+      }
     } catch {
       setMessages((m) => [...m, { role: 'assistant', text: 'Could not reach the server.', error: true }])
     }
@@ -52,7 +71,7 @@ export default function App() {
         <span className="params-count">{total.toLocaleString('en-US')} parameters</span>
       </header>
 
-      <main className="chat-messages">
+      <main className="chat-messages" ref={messagesRef}>
         {messages.length === 0 && (
           <div className="chat-empty">
             <p>Type the start of a story, an article or some Python code, and the model continues it.</p>
@@ -70,7 +89,9 @@ export default function App() {
             {m.text}
           </div>
         ))}
-        {loading && <div className="message message-assistant message-typing">…</div>}
+        {loading && messages[messages.length - 1].role === 'user' && (
+          <div className="message message-assistant message-typing">…</div>
+        )}
       </main>
 
       <section className="sampling">

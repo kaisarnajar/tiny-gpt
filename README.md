@@ -102,6 +102,27 @@ embedding (weight tying), which saves 8.4M parameters. Stored as 32-bit floats, 
 
 The loss starts at 9.8, close to a random guess among 16,384 tokens (ln 16,384 = 9.7).
 
+## Generation speed
+
+- **Time to first token (TTFT):** the time from sending the prompt until the first new token is ready. This is
+  how long you wait before the answer starts to appear.
+- **Time per token:** the time to generate each following token. This sets how fast the answer streams;
+  1 / time per token is the speed in tokens per second.
+
+Measured with `stream()` on the Mac's CPU (Apple M6), temperature 0.8, up to 300 new tokens, for the three example
+prompts, three runs each:
+
+| | Time |
+|---|---|
+| time to first token | **5 ms** |
+| time per token, first 50 tokens | 5.5 ms (about 180 tokens per second) |
+| time per token, last 50 of 300 tokens | 23 ms (about 43 tokens per second) |
+| time per token, average over 300 tokens | **14 ms** (about 72 tokens per second) |
+| a full 300-token answer | about 4 seconds |
+
+Each token gets slower as the text grows, because the model reads the whole text again for every new token.
+A KV cache would keep the time per token nearly flat.
+
 ## How we got here
 
 The model was built one piece at a time, checking after each piece that the validation loss went down.
@@ -150,9 +171,9 @@ the two tables, or between rows of the second table that use a different tokeniz
 | `bpe.py` | byte-level BPE tokenizer; `python bpe.py` trains `bpe.json` on the first 50M characters of `data/train.txt` |
 | `model.py` | the model: `Attention`, `FFN`, `Block` and `GPT` |
 | `train.py` | tokenizes the data (cached in `data/*.npy`), trains the model and saves `model.pt` |
-| `generate.py` | continues a text, with temperature, top-k and top-p sampling |
+| `generate.py` | continues a text token by token (`stream`), with temperature, top-k and top-p sampling |
 | `explore.py` | model report: settings, validation per source, fixed samples and next-token guesses |
-| `server.py` | web server for the chat page |
+| `server.py` | web server for the chat page; streams each new piece of text with Server-Sent Events (SSE) |
 | `frontend/` | the chat page (React) |
 
 ## Run
