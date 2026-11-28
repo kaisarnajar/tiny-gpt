@@ -2,7 +2,6 @@ import { useEffect, useState, type FormEvent } from 'react'
 import './App.css'
 
 type Message = { role: 'user' | 'assistant'; text: string; error?: boolean }
-type Layer = { name: string; shape: string; params: number }
 
 const EXAMPLES = ['Once upon a time', 'The water cycle is', 'def is_prime(n):']
 
@@ -10,9 +9,7 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [layers, setLayers] = useState<Layer[]>([])
   const [total, setTotal] = useState(0)
-  const [showParams, setShowParams] = useState(true)
   const [temperature, setTemperature] = useState(1.0)
   const [topK, setTopK] = useState(0)
   const [topP, setTopP] = useState(0.9)
@@ -20,10 +17,7 @@ export default function App() {
   useEffect(() => {
     fetch('/api/info')
       .then((res) => res.json())
-      .then((data) => {
-        setLayers(data.layers)
-        setTotal(data.total)
-      })
+      .then((data) => setTotal(data.parameters))
   }, [])
 
   async function send(e: FormEvent) {
@@ -55,39 +49,8 @@ export default function App() {
     <div className="chat">
       <header className="chat-header">
         <h1>tiny-gpt</h1>
-        <button type="button" className="params-toggle" onClick={() => setShowParams(!showParams)}>
-          {total.toLocaleString('en-US')} parameters {showParams ? '▴' : '▾'}
-        </button>
+        <span className="params-count">{total.toLocaleString('en-US')} parameters</span>
       </header>
-
-      {showParams && (
-        <section className="params">
-          <table>
-            <thead>
-              <tr>
-                <th>Layer</th>
-                <th>Shape</th>
-                <th className="num">Parameters</th>
-              </tr>
-            </thead>
-            <tbody>
-              {layers.map((l) => (
-                <tr key={l.name}>
-                  <td>{l.name}</td>
-                  <td>{l.shape}</td>
-                  <td className="num">{l.params.toLocaleString('en-US')}</td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colSpan={2}>Total</td>
-                <td className="num">{total.toLocaleString('en-US')}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </section>
-      )}
 
       <main className="chat-messages">
         {messages.length === 0 && (

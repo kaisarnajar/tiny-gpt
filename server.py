@@ -20,9 +20,7 @@ class Request(BaseModel):
 
 @app.get("/api/info")
 def info():
-    layers = [{"name": name, "shape": " × ".join(map(str, p.shape)), "params": p.numel()}
-              for name, p in model.named_parameters()]
-    return {"layers": layers, "total": sum(layer["params"] for layer in layers)}
+    return {"parameters": sum(p.numel() for p in model.parameters())}
 
 
 @app.post("/api/complete")
